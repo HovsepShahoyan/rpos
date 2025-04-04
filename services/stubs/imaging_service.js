@@ -18,6 +18,8 @@ exports.ImagingService = {
     Imaging : {
       //var GetServiceCapabilities = { };
       GetServiceCapabilities : function(args /*, cb, headers*/) {
+            console.log("✅ GetImagingCapabilities triiggered");
+    console.log(JSON.stringify(args, null, 2))
         throw NOT_IMPLEMENTED;
         //var GetServiceCapabilitiesResponse = { 
           //Capabilities : { 
@@ -36,6 +38,8 @@ exports.ImagingService = {
       //
       //};
       GetImagingSettings : function(args /*, cb, headers*/) {
+            console.log("✅ GetImagingSettings triggered");
+    console.log(JSON.stringify(args, null, 2))
         throw NOT_IMPLEMENTED;
         //var GetImagingSettingsResponse = { 
           //ImagingSettings : { 
@@ -209,9 +213,30 @@ exports.ImagingService = {
       //
       //};
       SetImagingSettings : function(args /*, cb, headers*/) {
-        throw NOT_IMPLEMENTED;
+        //throw NOT_IMPLEMENTED;
         //var SetImagingSettingsResponse = { };
         //return SetImagingSettingsResponse;
+	    console.log("✅ SetImagingSettings triggered");
+    console.log(JSON.stringify(args, null, 2));
+
+    // You can extract the values like this:
+    const settings = args.ImagingSettings || {};
+    
+    if (settings.Brightness !== undefined) {
+        console.log("🎚 Brightness changed to:", settings.Brightness);
+
+        // Optional: Hook in your brightness logic here
+        // e.g. call an internal function to apply the change
+        // myCustomBrightnessFunction(settings.Brightness);
+    }
+
+    if (settings.Contrast !== undefined) {
+        console.log("🎛 Contrast changed to:", settings.Contrast);
+        // myCustomContrastFunction(settings.Contrast);
+    }
+
+    // Respond with an empty success object
+    return {};
       },
 
       //var GetOptions = { 

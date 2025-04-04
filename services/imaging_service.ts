@@ -321,11 +321,14 @@ class ImagingService extends SoapService {
 
       port.SetImagingSettings = (args) => {
         var SetImagingSettingsResponse = { };
+	  console.log('====== SetImagingSettings triggered ======');
+	  console.log(JSON.stringify(args, null, 2));
 
         // Check for Brightness value
         if (args.ImagingSettings) {
           if (args.ImagingSettings.Brightness) {
             this.brightness = args.ImagingSettings.Brightness;
+            console.log('Brightness received:', args.ImagingSettings.Brightness);
             // emit the 'brightness' message to the parent
             if (this.callback) this.callback('brightness', {value: this.brightness});
           }
