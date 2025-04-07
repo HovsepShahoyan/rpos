@@ -116,6 +116,12 @@ class StreamServer:
         #    0 to 100: Tweak brightness (default=50)
         self.brightness_range = [0, 100]
         self.brightness = 50
+
+        ##################################################################################################################################################################
+        # Digital Zoom 
+        #    0 to 100: Tweak brightness (default=50)
+        self.digital_zoom_range = [1, 8]
+        self.digital_zoom = 1
         
         ##################################################################################################################################################################
         # Saturation
@@ -227,45 +233,62 @@ class StreamServer:
        #             log.info(f"[UART] Brightness script executed for value {new_brightness}")
         #        except subprocess.CalledProcessError as e:
          #           log.error(f"[UART ERROR] Brightness script failed: {e.stderr.decode().strip()}")
-
                 new_brightness = config["UserControls"]["brightness"]
                 if self.check_range(new_brightness, self.brightness_range):
                     if new_brightness != self.brightness:
                         log.info(f"[Changed] brightness: {self.brightness} → {new_brightness}")
                         self.brightness = new_brightness
 
-               # Safe UART call to external script
-                        import subprocess
+                        # Safe UART call to external script
                         try:
                             subprocess.Popen(
-                            ["python3", "/home/jetson/send_brightness.py", "--value", str(new_brightness)],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL
-                        )
+                                ["python3", "/home/jetson/rpos/scripts/send_brightness.py", "--value", str(new_brightness)],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL
+                            )
                             log.info(f"[UART] Sent brightness {new_brightness} via external script.")
                         except Exception as e:
-                            log.error(f"[UART ERROR] Failed to launch brightness script: {e}")    
+                            log.error(f"[UART ERROR] Failed to launch brightness script: {e}")
+
+                new_digital_zoom = config["UserControls"]["digital_zoom"]
+                log.info("new_digital_zoom {new_digital_zoom}")
+                if self.check_range(new_digital_zoom, self.digital_zoom_range):
+                    if new_digital_zoom != self.digital_zoom:
+                        log.info(f"[Changed] digital_zoom: {self.digital_zoom} → {new_digital_zoom}")
+                        self.digital_zoom = new_digital_zoom
+
+                        # Safe UART call to external script
+                        try:
+                            subprocess.Popen(
+                                ["python3", "/home/jetson/rpos/scripts/send_zoom.py", "--level", str(new_digital_zoom)],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL
+                            )
+                            log.info(f"[UART] Sent digital_zoom {new_digital_zoom} via external script.")
+                        except Exception as e:
+                            log.error(f"[UART ERROR] Failed to launch digital_zoom script: {e}")
+
 
                 if self.check_range(config["UserControls"]["contrast"], self.contrast_range):
                     self.contrast = config["UserControls"]["contrast"]
                 else:
                     log.error("contrast out of range: " + str(config["UserControls"]["contrast"]))
-                
+
                 if self.check_range(config["UserControls"]["saturation"], self.saturation_range):
                     self.saturation = config["UserControls"]["saturation"]
                 else:
                     log.error("saturation out of range: " + str(config["UserControls"]["saturation"]))
-                
+
                 if self.check_range(config["UserControls"]["sharpness"], self.sharpness_range):
                     self.sharpness = config["UserControls"]["sharpness"]
                 else:
                     log.error("sharpness out of range: " + str(config["UserControls"]["sharpness"]))
-                
+
                 if self.check_range(config["UserControls"]["red_balance"] / 1000.0, self.gain_red_range):
                     self.gain_red = config["UserControls"]["red_balance"] / 1000.0
                 else:
                     log.error("red balance out of range: " + str(config["UserControls"]["red_balance"] / 1000.0))
-                
+
                 if self.check_range(config["UserControls"]["blue_balance"] / 1000.0, self.gain_blue_range):
                     self.gain_blue = config["UserControls"]["blue_balance"] / 1000.0
                 else:
