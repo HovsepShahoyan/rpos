@@ -119,10 +119,16 @@ class StreamServer:
 
         ##################################################################################################################################################################
         # Digital Zoom 
-        #    0 to 100: Tweak brightness (default=50)
+        #    0 to 100: Tweak digital zoom (default=1)
         self.digital_zoom_range = [1, 8]
         self.digital_zoom = 1
         
+        ##################################################################################################################################################################
+        # Palette 
+        #    0 to 100: Tweak palette (default=0)
+        self.palette_range = [0, 14]
+        self.palette = 0
+
         ##################################################################################################################################################################
         # Saturation
         #    0 to 100: Tweak saturation (default=0)
@@ -268,11 +274,44 @@ class StreamServer:
                         except Exception as e:
                             log.error(f"[UART ERROR] Failed to launch digital_zoom script: {e}")
 
+                new_palette = config["UserControls"]["palette"]
+                if 0 <= new_palette <= 14:
+                    if new_palette != self.palette:
+                        log.info(f"[Changed] palette: {self.palette} → {new_palette}")
+                        self.palette = new_palette
+                        try:
+                            subprocess.Popen(
+                                ["python3", "/home/jetson/rpos/scripts/send_palette.py", "--value", str(new_palette)],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL
+                            )
+                            log.info(f"[UART] Sent palette {new_palette} via external script.")
+                        except Exception as e:
+                            log.error(f"[UART ERROR] Failed to launch palette script: {e}")
 
-                if self.check_range(config["UserControls"]["contrast"], self.contrast_range):
-                    self.contrast = config["UserControls"]["contrast"]
-                else:
-                    log.error("contrast out of range: " + str(config["UserControls"]["contrast"]))
+
+
+                #if self.check_range(config["UserControls"]["contrast"], self.contrast_range):
+                #    self.contrast = config["UserControls"]["contrast"]
+                #else:
+                #    log.error("contrast out of range: " + str(config["UserControls"]["contrast"]))
+                
+                new_contrast = config["UserControls"]["contrast"]
+                if self.check_range(new_contrast, self.contrast_range):
+                    if new_contrast != self.contrast:
+                        log.info(f"[Changed] contrast: {self.contrast} → {new_contrast}")
+                        self.contrast = new_contrast
+                        # Safe UART call to external contrast script
+                        try:
+                            subprocess.Popen(
+                                ["python3", "/home/jetson/rpos/scripts/send_contrast.py", "--value", str(new_contrast)],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL
+                            )
+                            log.info(f"[UART] Sent contrast {new_contrast} via external script.")
+                        except Exception as e:
+                            log.error(f"[UART ERROR] Failed to launch contrast script: {e}")
+
 
                 if self.check_range(config["UserControls"]["saturation"], self.saturation_range):
                     self.saturation = config["UserControls"]["saturation"]
