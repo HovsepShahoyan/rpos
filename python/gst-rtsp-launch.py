@@ -122,6 +122,14 @@ class StreamServer:
         #    0 to 100: Tweak digital zoom (default=1)
         self.digital_zoom_range = [1, 8]
         self.digital_zoom = 1
+
+        ##################################################################################################################################################################
+        # IP address, username, password   
+        #    0 to 100: Tweak IP address, username, password
+        self.ip_address = "192.168.0.86"
+        self.username = "admin"
+        self.password = "admin"
+
         
         ##################################################################################################################################################################
         # Palette 
@@ -288,6 +296,29 @@ class StreamServer:
                             log.info(f"[UART] Sent palette {new_palette} via external script.")
                         except Exception as e:
                             log.error(f"[UART ERROR] Failed to launch palette script: {e}")
+
+                new_ip = config["UserControls"]["ip_address"]
+                new_username = config["UserControls"]["username"]
+                new_password = config["UserControls"]["password"]
+                log.info(f" {new_ip} {new_username} {new_password} ")
+
+                if (new_ip != self.ip_address or
+                    new_username != self.username or
+                    new_password != self.password):
+
+                    log.info("[Changed] IP/Username/Password has changed")
+                    try:
+                        subprocess.Popen(
+                            ["bash", "/home/jetson/rpos/scripts/update_rpos_config.sh",
+                             "--ip", new_ip,
+                             "--user", new_username,
+                             "--pass", new_password],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL
+                        )
+                        log.info("[SCRIPT] Ran update_config.sh to apply IP/Login/Password changes.")
+                    except Exception as e:
+                        log.error(f"[SCRIPT ERROR] Failed to launch config update script: {e}")
 
 
 

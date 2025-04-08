@@ -14,7 +14,10 @@
 "rotate":0,
 "color_effects_cbcr":32896,
 "digital_zoom":1,
-"palette":3}
+"palette":3,
+"ip_address":"192.168.0.99",
+"username":"admin2",
+"password":"admin2"}
 ,
 "CodecControls":
 {
