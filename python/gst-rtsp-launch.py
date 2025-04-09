@@ -15,6 +15,8 @@ parser.add_argument('-H', '--rtspresolutionheight', action='store', default=720,
 parser.add_argument('-M', '--mjpeg', action='store_true', help='Start with MJPEG codec')
 args = parser.parse_args()
 
+# Import TCP Communication
+from tester3d.TCPCommunication import client_network
 
 # --------------------------------------------------------------------------- # 
 # configure the service logging
@@ -189,6 +191,24 @@ class StreamServer:
         self.rotation = 0
         
         self.configDate = 0
+
+        # Initialize connections to Camera
+        motion.connection = connection.Connection()
+        devices.connection = connection.Connection()
+
+        motion_connection.IP = "192.168.0.31"
+        motion_connection.Port = 8888
+        devices_connection.IP = "192.168.0.31"
+        devices_connection.Port = 2222
+
+        devices_connection.Connect(devices_connection.IP, devices_connection.Port)
+
+        def connected():
+            print("Connected")
+            devices_connection.SendCommand("IR_Camera", "str_IRCam_set_brithness", 68)
+
+        devices_connection.network.connected.connect(connected)
+
     
     def exit_gracefully(self, signum, frame):
         self.stop()
