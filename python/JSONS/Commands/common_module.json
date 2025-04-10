@@ -1,0 +1,14 @@
+
+{
+	"module" : "Module_C" ,
+	"commands" : 
+	[
+		{"str_Module_set_test_data" : "Module_test"},
+		{"str_get_Module_test_data" : "g_Module_test"},
+		{"str_TCP_IP_0_address" : "TCP_IP[0]_add"},
+		{"str_TCP_IP_1_address" : "TCP_IP[1]_add"},
+		{"str_TCP_IP_2_address" : "TCP_IP[2]_add"},
+		{"str_TCP_IP_3_address" : "TCP_IP[3]_add"}
+	]
+
+}

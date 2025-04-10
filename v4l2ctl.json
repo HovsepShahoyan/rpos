@@ -1,7 +1,7 @@
 {
 "UserControls":
 {
-"brightness":0,
+"brightness":97,
 "contrast":50,
 "saturation":4,
 "red_balance":1000,
@@ -12,12 +12,7 @@
 "sharpness":0,
 "color_effects":0,
 "rotate":0,
-"color_effects_cbcr":32896,
-"digital_zoom":1,
-"palette":3,
-"ip_address":"192.168.0.99",
-"username":"admin2",
-"password":"admin2"}
+"color_effects_cbcr":32896}
 ,
 "CodecControls":
 {

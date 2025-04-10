@@ -1,0 +1,31 @@
+
+{
+	"module" : "Dey_Camera" ,
+	"commonCommands" : 
+	[
+		{"str_DeyCam_zoom_stop" 							: "DyC_zoom_stop"},
+		{"str_DeyCam_zoom_tele" 							: "DyC_zoom_tele"},
+		{"str_DeyCam_zoom_wide" 							: "DyC_zoom_wide"}
+	],
+
+	"setCommands" : 
+	[
+		{"str_DeyCam_set_zoom" 								: "DyC_zoom"},
+		{"str_DeyCam_set_AE_Mode" 							: "DyC_AE_Mode"},
+		{"str_DeyCam_set_Dzoom_Mode" 						: "DyC_Dzoom_Mode"},
+		{"str_DeyCam_set_move_Bright" 						: "DyC_move_Bright"},
+		{"str_DeyCam_set_Bright" 							: "DyC_Bright"},
+		{"str_DeyCam_set_AF_on_off" 						: "DyC_AF_on_off"},
+		{"str_DeyCam_set_AF_Near_Limit_Mode" 				: "DyC_AF_NL_Mode"},
+		{"str_DeyCam_set_Dzoom_parametric" 					: "DyC_Dzoom"},
+		{"str_DeyCam_set_DNR_level" 						: "DyC_DNR_level"},
+		{"str_DeyCam_set_move_focuse" 						: "DyC_move_focuse"}
+
+	],
+
+	"getCommands" : 
+	[
+		{"str_get_DeyCam_zoom_INQUIRY_data" 					: "g_zoom_INQ_data"}
+	]
+
+}

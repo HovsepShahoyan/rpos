@@ -21,6 +21,7 @@ var ptr = 0;
 var remaining = process.argv.length;
 ptr += 2;
 remaining -= 2;
+console.log("\n✅✅✅ RPOS started — console.log IS WORKING ✅✅✅\n");
 while (remaining > 0) {
     if (process.argv[ptr] == '--help' || process.argv[ptr] == '-h') {
         console.log("RPOS ONVIF Server\r\n");
@@ -95,5 +96,17 @@ media_service.start();
 ptz_service.start();
 imaging_service.start();
 discovery_service.start();
+
+const cmdClient = require('./lib/CommandClient');
+
+process.on('SIGINT', () => {
+    cmdClient.shutdown();
+    process.exit();
+});
+process.on('SIGTERM', () => {
+    cmdClient.shutdown();
+    process.exit();
+});
+
 
 //# sourceMappingURL=rpos.js.map

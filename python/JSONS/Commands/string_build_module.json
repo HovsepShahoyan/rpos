@@ -1,0 +1,13 @@
+
+{
+	"module" : "StringBuild" ,
+	"commandBlocks" : 
+	[
+		{"str_Begin" 		: ">"},
+		{"str_ADR" 			: "ADR"},
+		{"str_SMD" 			: "SMD"},
+		{"str_SMDD" 		: "SMDD"},
+		{"str_LD" 			: "LD"}
+	]
+
+}

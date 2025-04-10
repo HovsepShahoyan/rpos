@@ -225,10 +225,20 @@ exports.ImagingService = {
     if (settings.Brightness !== undefined) {
         console.log("🎚 Brightness changed to:", settings.Brightness);
 
+    const v4l2ctl = require('../v4l2ctl');
+    const brightnessControl = v4l2ctl.Controls.UserControls.brightness;
+    if (brightnessControl.value !== settings.Brightness) {
+        brightnessControl.value = settings.Brightness;
+        console.log("🎚 Marked brightness as dirty");
+    } else {
+        console.log("⚠️ Brightness is already the same, not updating.")
+    }
+
         // Optional: Hook in your brightness logic here
         // e.g. call an internal function to apply the change
         // myCustomBrightnessFunction(settings.Brightness);
     }
+    v4l2ctl.ApplyControls();
 
     if (settings.Contrast !== undefined) {
         console.log("🎛 Contrast changed to:", settings.Contrast);

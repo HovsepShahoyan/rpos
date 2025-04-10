@@ -16,7 +16,14 @@ parser.add_argument('-M', '--mjpeg', action='store_true', help='Start with MJPEG
 args = parser.parse_args()
 
 # Import TCP Communication
-from tester3d.TCPCommunication import client_network
+from PySide6.QtCore import QDataStream, QIODevice
+from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout,QLabel, QPushButton, QLineEdit, QTextEdit, QStatusBar
+from PySide6.QtNetwork import QTcpSocket, QAbstractSocket
+from  TCPDataParsing import stmd_commands
+from   TCPCommunication import client_network, connection
+from   uiManager.ui_conection_manager import ConnectionUI
+from   uiManager.ui_manager import UI_Manager
+from   uiManager.gst_test import VideoPlayer
 
 # --------------------------------------------------------------------------- # 
 # configure the service logging
@@ -34,6 +41,7 @@ import os.path
 import subprocess
 import signal
 import sys
+from multiprocessing import Process, set_start_method
 
 from ctypes import *
 
@@ -59,6 +67,7 @@ class StreamServer:
     def __init__(self, type, device, file, port, name, width, height, codec):
         signal.signal(signal.SIGTERM, self.exit_gracefully)
         Gst.init(None)
+
         self.mainloop = GObject.MainLoop()
         self.server = GstRtspServer.RTSPServer()
         self.mounts = self.server.get_mount_points()
@@ -122,15 +131,15 @@ class StreamServer:
         ##################################################################################################################################################################
         # Digital Zoom 
         #    0 to 100: Tweak digital zoom (default=1)
-        self.digital_zoom_range = [1, 8]
-        self.digital_zoom = 1
+        #self.digital_zoom_range = [1, 8]
+        #self.digital_zoom = 1
 
         ##################################################################################################################################################################
         # IP address, username, password   
         #    0 to 100: Tweak IP address, username, password
-        self.ip_address = "192.168.0.86"
-        self.username = "admin"
-        self.password = "admin"
+        #self.ip_address = "192.168.0.86"
+        #self.username = "admin"
+        #self.password = "admin"
 
         
         ##################################################################################################################################################################
@@ -192,24 +201,6 @@ class StreamServer:
         
         self.configDate = 0
 
-        # Initialize connections to Camera
-        motion.connection = connection.Connection()
-        devices.connection = connection.Connection()
-
-        motion_connection.IP = "192.168.0.31"
-        motion_connection.Port = 8888
-        devices_connection.IP = "192.168.0.31"
-        devices_connection.Port = 2222
-
-        devices_connection.Connect(devices_connection.IP, devices_connection.Port)
-
-        def connected():
-            print("Connected")
-            devices_connection.SendCommand("IR_Camera", "str_IRCam_set_brithness", 68)
-
-        devices_connection.network.connected.connect(connected)
-
-    
     def exit_gracefully(self, signum, frame):
         self.stop()
         self.stayAwake = False
@@ -317,28 +308,28 @@ class StreamServer:
                         except Exception as e:
                             log.error(f"[UART ERROR] Failed to launch palette script: {e}")
 
-                new_ip = config["UserControls"]["ip_address"]
-                new_username = config["UserControls"]["username"]
-                new_password = config["UserControls"]["password"]
-                log.info(f" {new_ip} {new_username} {new_password} ")
+                # new_ip = config["UserControls"]["ip_address"]
+                # new_username = config["UserControls"]["username"]
+                # new_password = config["UserControls"]["password"]
+                # log.info(f" {new_ip} {new_username} {new_password} ")
 
-                if (new_ip != self.ip_address or
-                    new_username != self.username or
-                    new_password != self.password):
+                # if (new_ip != self.ip_address or
+                #     new_username != self.username or
+                #     new_password != self.password):
 
-                    log.info("[Changed] IP/Username/Password has changed")
-                    try:
-                        subprocess.Popen(
-                            ["bash", "/home/jetson/rpos/scripts/update_rpos_config.sh",
-                             "--ip", new_ip,
-                             "--user", new_username,
-                             "--pass", new_password],
-                             stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL
-                        )
-                        log.info("[SCRIPT] Ran update_config.sh to apply IP/Login/Password changes.")
-                    except Exception as e:
-                        log.error(f"[SCRIPT ERROR] Failed to launch config update script: {e}")
+                #     log.info("[Changed] IP/Username/Password has changed")
+                #     try:
+                #         subprocess.Popen(
+                #             ["bash", "/home/jetson/rpos/scripts/update_rpos_config.sh",
+                #              "--ip", new_ip,
+                #              "--user", new_username,
+                #              "--pass", new_password],
+                #              stdout=subprocess.DEVNULL,
+                #              stderr=subprocess.DEVNULL
+                #         )
+                #         log.info("[SCRIPT] Ran update_config.sh to apply IP/Login/Password changes.")
+                #     except Exception as e:
+                #         log.error(f"[SCRIPT ERROR] Failed to launch config update script: {e}")
 
 
 
@@ -454,7 +445,7 @@ class StreamServer:
 
             # Ignore most of the parameters
             log.info("Test camera ignored most of the parameters")
-            launch_str = '( rtspsrc location=rtsp://admin:Aragats777@192.168.0.32:554/stream latency=0 ! rtph264depay ! h264parse config-interval=1 ! rtph264pay name=pay0 pt=96'
+            launch_str = '( rtspsrc location=rtsp://admin:Aragats777@192.168.0.31:3333/stream latency=0 ! rtph264depay ! h264parse config-interval=1 ! rtph264pay name=pay0 pt=96'
             launch_str = launch_str + ' ! clockoverlay '
 
             # Completing the pipe
@@ -547,7 +538,12 @@ class StreamServer:
         self.stop()
         self.launch()
 
+    def b(self):
+        print("Br")
+    
 if __name__ == '__main__':
+    log.info("Here")
+
     codec = 0         # Default to H264
     if args.mjpeg:
         codec = 1
@@ -557,4 +553,6 @@ if __name__ == '__main__':
     streamServer.readConfig()
     streamServer.launch()
     streamServer.start()
+
+
     

@@ -1,0 +1,29 @@
+
+{
+	"module" : "Az_enc_crct" ,
+	"commonCommands" : 
+	[
+		{"str_Az_encoder_correctors_matrix_reset" 			: "Az_enc_crct_Rst"},
+		{"str_Az_encoder_correctors_matrix_save" 			: "Az_enc_crct_Sv"}
+	],
+
+	"setCommands" : 
+	[
+		{"str_Az_encoder_correction_zona_number" 				: "Az_enc_cr_ZN"},
+		{"str_Az_encoder_correction_member_number" 				: "Az_enc_cr_MN"},
+		{"str_Az_encoder_correction_member" 					: "Az_enc_cr_Mem"},
+		{"str_Az_encoder_reference_member" 						: "Az_enc_rf_Mem"},
+
+		{"str_get_Az_encoder_correction_member" 				: "g_Az_enc_cr_Mem"}
+
+
+	],
+
+	"getCommands" : 
+	[
+		{"str_get_Az_encoder_correction_zona_number" 			: "g_Az_enc_cr_ZN"},
+		{"str_get_Az_encoder_correction_member_number" 			: "g_Az_enc_cr_MN"},
+		{"str_get_Az_encoder_reference_member" 					: "g_Az_enc_rf_Mem"}
+	]
+
+}

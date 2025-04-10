@@ -1,0 +1,7 @@
+[Desktop Entry]
+Version=1.0
+Name=3D_01_Tester
+Comment=Run my Python project
+Exec=/home/jetson2/Projects/3D_01_Tester/3D_01_Tester/launcher.sh
+Terminal=true
+Type=Application

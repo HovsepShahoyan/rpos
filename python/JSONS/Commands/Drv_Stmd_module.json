@@ -1,0 +1,59 @@
+
+{
+	"module" : "STMD" ,
+	"commonCommands" : 
+	[
+		{"str_Polling_STMD_Off" 							: "Poll_STMD_Off"},
+		{"str_Polling_STMD_On" 								: "Poll_STMD_On"},
+		{"str_Polling_STMD_Full_Off" 						: "Poll_STMDF_Off"},
+		{"str_Polling_STMD_Full_On" 						: "Poll_STMDF_On"},
+		{"str_Polling_STMD" 								: "Poll_STMD"},
+		{"str_STMD_off" 									: "STMD_off"},
+		{"str_STMD_on" 										: "STMD_on"},
+		{"str_STMD_stop_Az" 								: "STMD_Stop_Az"},
+		{"str_STMD_stop_El" 								: "STMD_Stop_El"},
+		{"str_STMD_reset_position_Az" 						: "STMD_Reset_Az"},
+		{"str_STMD_reset_position_El" 						: "STMD_Reset_El"},
+		{"str_STMD_anchor_steps_to_angular_sensor" 			: "STMD_anchor"}
+	],
+
+	"setCommands" : 
+	[
+		{"str_STMD_set_min_frequency_Az" 					: "STMD_min_fr_Az"},
+		{"str_STMD_set_max_frequency_Az" 					: "STMD_max_fr_Az"},
+		{"str_STMD_set_min_frequency_El" 					: "STMD_min_fr_El"},
+		{"str_STMD_set_max_frequency_El" 					: "STMD_max_fr_El"},
+		{"str_STMD_set_acceleration_Az" 					: "STMD_accel_Az"},
+		{"str_STMD_set_acceleration_El" 					: "STMD_accel_El"},
+		{"str_STMD_set_turget_position_Az" 					: "STMD_tgt_pos_Az"},
+		{"str_STMD_set_turget_position_El" 					: "STMD_tgt_pos_El"},
+		{"str_STMD_set_current_position_Az" 				: "STMD_crt_pos_Az"},
+		{"str_STMD_set_current_position_El" 				: "STMD_crt_pos_El"},
+		{"str_STMD_set_turget_position_encoder_Az" 			: "STMD_tgt_pe_Az"},
+		{"str_STMD_set_turget_position_encoder_El" 			: "STMD_tgt_pe_El"},
+		{"str_STMD_set_turget_position_inclinometer_El" 	: "STMD_tgt_pi_El"},
+		{"str_STMD_set_joystick_Az" 						: "STMD_joystick_Az"},
+		{"str_STMD_set_current_position_Az" 				: "STMD_joystick_El"}
+
+	],
+
+	"getCommands" : 
+	[
+		{"str_STMD_get_current_position_Az" 							: "g_curr_pos_Az"},
+		{"str_STMD_get_current_position_El" 							: "g_curr_pos_El"},
+		{"str_STMD_get_turget_position_Az" 							: "g_trg_pos_Az"},
+		{"str_STMD_get_turget_position_El" 							: "g_trg_pos_El"},
+		{"str_STMD_get_motor_status" 								: "g_Mot_Status"},
+		{"str_STMD_get_switcher_byte" 								: "g_switch_byte"},
+		{"str_STMD_get_Encoder_az" 									: "g_Encoder_Az"},
+		{"str_STMD_get_Encoder_el" 									: "g_Encoder_El"},
+		{"str_STMD_get_joystick_Az" 									: "g_joystick_Az"},
+		{"str_STMD_get_joystick_El" 									: "g_joystick_El"},
+		{"str_STMD_get_board_voltage" 								: "g_board_volt"},
+		{"str_STMD_get_consol_key_status_byte" 						: "g_CnslKeyStatus"},
+		{"str_STMD_get_MC_Temperature_ADC" 							: "g_MC_Tmpr_ADC"},
+		{"str_STMD_get_Az_corrected" 								: "g_Enc_Az_crct"},
+		{"str_STMD_get_El_corrected" 								: "g_Enc_El_crct"}
+	]
+
+}
