@@ -237,15 +237,15 @@ class StreamServer:
                 else:
                     log.error("i-frame period invalid: " + str(config["CodecControls"]["h264_i_frame_period"]))
                 
-                #if self.check_range(config["UserControls"]["brightness"], self.brightness_range):
-                #    self.brightness = config["UserControls"]["brightness"]
-                #else:
-                #    log.error("brightness out of range: " + str(config["UserControls"]["brightness"]))
-                #new_brightness = config["UserControls"]["brightness"]
-                #if self.check_range(new_brightness, self.brightness_range):
-                #    if new_brightness != self.brightness:
-                #        log.info(f"[Changed] brightness: {self.brightness} → {new_brightness}")
-                #        self.brightness = new_brightness
+                if self.check_range(config["UserControls"]["brightness"], self.brightness_range):
+                   self.brightness = config["UserControls"]["brightness"]
+                else:
+                   log.error("brightness out of range: " + str(config["UserControls"]["brightness"]))
+                new_brightness = config["UserControls"]["brightness"]
+                if self.check_range(new_brightness, self.brightness_range):
+                   if new_brightness != self.brightness:
+                       log.info(f"[Changed] brightness: {self.brightness} → {new_brightness}")
+                       self.brightness = new_brightness
 
                 # Call the external UART brightness script
 #               try:
@@ -258,55 +258,55 @@ class StreamServer:
        #             log.info(f"[UART] Brightness script executed for value {new_brightness}")
         #        except subprocess.CalledProcessError as e:
          #           log.error(f"[UART ERROR] Brightness script failed: {e.stderr.decode().strip()}")
-                new_brightness = config["UserControls"]["brightness"]
-                if self.check_range(new_brightness, self.brightness_range):
-                    if new_brightness != self.brightness:
-                        log.info(f"[Changed] brightness: {self.brightness} → {new_brightness}")
-                        self.brightness = new_brightness
+                # new_brightness = config["UserControls"]["brightness"]
+                # if self.check_range(new_brightness, self.brightness_range):
+                #     if new_brightness != self.brightness:
+                #         log.info(f"[Changed] brightness: {self.brightness} → {new_brightness}")
+                #         self.brightness = new_brightness
 
-                        # Safe UART call to external script
-                        try:
-                            subprocess.Popen(
-                                ["python3", "/home/jetson/rpos/scripts/send_brightness.py", "--value", str(new_brightness)],
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL
-                            )
-                            log.info(f"[UART] Sent brightness {new_brightness} via external script.")
-                        except Exception as e:
-                            log.error(f"[UART ERROR] Failed to launch brightness script: {e}")
+                #         # Safe UART call to external script
+                #         try:
+                #             subprocess.Popen(
+                #                 ["python3", "/home/jetson/rpos/scripts/send_brightness.py", "--value", str(new_brightness)],
+                #                 stdout=subprocess.DEVNULL,
+                #                 stderr=subprocess.DEVNULL
+                #             )
+                #             log.info(f"[UART] Sent brightness {new_brightness} via external script.")
+                #         except Exception as e:
+                #             log.error(f"[UART ERROR] Failed to launch brightness script: {e}")
 
-                new_digital_zoom = config["UserControls"]["digital_zoom"]
-                log.info("new_digital_zoom {new_digital_zoom}")
-                if self.check_range(new_digital_zoom, self.digital_zoom_range):
-                    if new_digital_zoom != self.digital_zoom:
-                        log.info(f"[Changed] digital_zoom: {self.digital_zoom} → {new_digital_zoom}")
-                        self.digital_zoom = new_digital_zoom
+                # new_digital_zoom = config["UserControls"]["digital_zoom"]
+                # #log.info("new_digital_zoom {new_digital_zoom}")
+                # if self.check_range(new_digital_zoom, self.digital_zoom_range):
+                #     if new_digital_zoom != self.digital_zoom:
+                #         #log.info(f"[Changed] digital_zoom: {self.digital_zoom} → {new_digital_zoom}")
+                #         self.digital_zoom = new_digital_zoom
 
-                        # Safe UART call to external script
-                        try:
-                            subprocess.Popen(
-                                ["python3", "/home/jetson/rpos/scripts/send_zoom.py", "--level", str(new_digital_zoom)],
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL
-                            )
-                            log.info(f"[UART] Sent digital_zoom {new_digital_zoom} via external script.")
-                        except Exception as e:
-                            log.error(f"[UART ERROR] Failed to launch digital_zoom script: {e}")
+                #         # Safe UART call to external script
+                #         try:
+                #             subprocess.Popen(
+                #                 ["python3", "/home/jetson/rpos/scripts/send_zoom.py", "--level", str(new_digital_zoom)],
+                #                 stdout=subprocess.DEVNULL,
+                #                 stderr=subprocess.DEVNULL
+                #             )
+                #             #log.info(f"[UART] Sent digital_zoom {new_digital_zoom} via external script.")
+                #         except Exception as e:
+                #             #log.error(f"[UART ERROR] Failed to launch digital_zoom script: {e}")
 
-                new_palette = config["UserControls"]["palette"]
-                if 0 <= new_palette <= 14:
-                    if new_palette != self.palette:
-                        log.info(f"[Changed] palette: {self.palette} → {new_palette}")
-                        self.palette = new_palette
-                        try:
-                            subprocess.Popen(
-                                ["python3", "/home/jetson/rpos/scripts/send_palette.py", "--value", str(new_palette)],
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL
-                            )
-                            log.info(f"[UART] Sent palette {new_palette} via external script.")
-                        except Exception as e:
-                            log.error(f"[UART ERROR] Failed to launch palette script: {e}")
+                # new_palette = config["UserControls"]["palette"]
+                # if 0 <= new_palette <= 14:
+                #     if new_palette != self.palette:
+                #         log.info(f"[Changed] palette: {self.palette} → {new_palette}")
+                #         self.palette = new_palette
+                #         try:
+                #             subprocess.Popen(
+                #                 ["python3", "/home/jetson/rpos/scripts/send_palette.py", "--value", str(new_palette)],
+                #                 stdout=subprocess.DEVNULL,
+                #                 stderr=subprocess.DEVNULL
+                #             )
+                #             #log.info(f"[UART] Sent palette {new_palette} via external script.")
+                #         except Exception as e:
+                            #log.error(f"[UART ERROR] Failed to launch palette script: {e}")
 
                 # new_ip = config["UserControls"]["ip_address"]
                 # new_username = config["UserControls"]["username"]
@@ -333,26 +333,26 @@ class StreamServer:
 
 
 
-                #if self.check_range(config["UserControls"]["contrast"], self.contrast_range):
-                #    self.contrast = config["UserControls"]["contrast"]
-                #else:
-                #    log.error("contrast out of range: " + str(config["UserControls"]["contrast"]))
+                if self.check_range(config["UserControls"]["contrast"], self.contrast_range):
+                   self.contrast = config["UserControls"]["contrast"]
+                else:
+                   log.error("contrast out of range: " + str(config["UserControls"]["contrast"]))
                 
-                new_contrast = config["UserControls"]["contrast"]
-                if self.check_range(new_contrast, self.contrast_range):
-                    if new_contrast != self.contrast:
-                        log.info(f"[Changed] contrast: {self.contrast} → {new_contrast}")
-                        self.contrast = new_contrast
-                        # Safe UART call to external contrast script
-                        try:
-                            subprocess.Popen(
-                                ["python3", "/home/jetson/rpos/scripts/send_contrast.py", "--value", str(new_contrast)],
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL
-                            )
-                            log.info(f"[UART] Sent contrast {new_contrast} via external script.")
-                        except Exception as e:
-                            log.error(f"[UART ERROR] Failed to launch contrast script: {e}")
+                # new_contrast = config["UserControls"]["contrast"]
+                # if self.check_range(new_contrast, self.contrast_range):
+                #     if new_contrast != self.contrast:
+                #         log.info(f"[Changed] contrast: {self.contrast} → {new_contrast}")
+                #         self.contrast = new_contrast
+                #         # Safe UART call to external contrast script
+                #         try:
+                #             subprocess.Popen(
+                #                 ["python3", "/home/jetson/rpos/scripts/send_contrast.py", "--value", str(new_contrast)],
+                #                 stdout=subprocess.DEVNULL,
+                #                 stderr=subprocess.DEVNULL
+                #             )
+                #             log.info(f"[UART] Sent contrast {new_contrast} via external script.")
+                #         except Exception as e:
+                #             log.error(f"[UART ERROR] Failed to launch contrast script: {e}")
 
 
                 if self.check_range(config["UserControls"]["saturation"], self.saturation_range):
@@ -542,8 +542,6 @@ class StreamServer:
         print("Br")
     
 if __name__ == '__main__':
-    log.info("Here")
-
     codec = 0         # Default to H264
     if args.mjpeg:
         codec = 1

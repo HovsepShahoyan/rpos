@@ -1,8 +1,8 @@
 {
 "UserControls":
 {
-"brightness":97,
-"contrast":50,
+"brightness":0,
+"contrast":0,
 "saturation":4,
 "red_balance":1000,
 "blue_balance":1000,
@@ -13,8 +13,8 @@
 "color_effects":0,
 "rotate":0,
 "color_effects_cbcr":32896,
-"digital_zoom":2,
-"far_focus":true}
+"digital_zoom":1,
+"far_focus":false}
 ,
 "CodecControls":
 {
