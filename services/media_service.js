@@ -217,6 +217,17 @@ var MediaService = (function (_super) {
             VideoEncoderConfiguration: videoEncoderConfiguration,
             PTZConfiguration: this.ptz_service.ptzConfiguration
         };
+
+        var profile2 = {
+            Name: "SecondProfile",
+            attributes: {
+              token: "profile_token_2"
+            },
+            VideoSourceConfiguration: videoSourceConfiguration,
+            VideoEncoderConfiguration: videoEncoderConfiguration,
+            PTZConfiguration: this.ptz_service.ptzConfiguration
+        };
+
         port.GetServiceCapabilities = function (args) {
             var GetServiceCapabilitiesResponse = {
                 Capabilities: {
@@ -244,28 +255,49 @@ var MediaService = (function (_super) {
             };
             return GetServiceCapabilitiesResponse;
         };
+        // port.GetStreamUri = function (args) {
+        //     var rtspAddress = utils.getIpAddress();
+        //     if (_this.config.RTSPAddress.length > 0)
+        //         rtspAddress = _this.config.RTSPAddress;
+        //     var GetStreamUriResponse = {
+        //         MediaUri: {
+        //             Uri: (args.StreamSetup.Stream == "RTP-Multicast" && _this.config.MulticastEnabled ?
+        //                 "rtsp://".concat(rtspAddress, ":").concat(_this.config.RTSPPort, "/").concat(_this.config.RTSPMulticastName) :
+        //                 "rtsp://".concat(rtspAddress, ":").concat(_this.config.RTSPPort, "/").concat(_this.config.RTSPName)),
+        //             InvalidAfterConnect: false,
+        //             InvalidAfterReboot: false,
+        //             Timeout: "PT30S"
+        //         }
+        //     };
+        //     return GetStreamUriResponse;
+        // };
+
         port.GetStreamUri = function (args) {
             var rtspAddress = utils.getIpAddress();
             if (_this.config.RTSPAddress.length > 0)
                 rtspAddress = _this.config.RTSPAddress;
-            var GetStreamUriResponse = {
+        
+            var streamName = _this.config.RTSPName;
+            if (args.ProfileToken === "profile_token_2") {
+                streamName = _this.config.RTSPAltName;
+            }
+        
+            return {
                 MediaUri: {
-                    Uri: (args.StreamSetup.Stream == "RTP-Multicast" && _this.config.MulticastEnabled ?
-                        "rtsp://".concat(rtspAddress, ":").concat(_this.config.RTSPPort, "/").concat(_this.config.RTSPMulticastName) :
-                        "rtsp://".concat(rtspAddress, ":").concat(_this.config.RTSPPort, "/").concat(_this.config.RTSPName)),
+                    Uri: "rtsp://" + rtspAddress + ":" + _this.config.RTSPPort + "/" + streamName,
                     InvalidAfterConnect: false,
                     InvalidAfterReboot: false,
                     Timeout: "PT30S"
                 }
             };
-            return GetStreamUriResponse;
         };
+
         port.GetProfile = function (args) {
             var GetProfileResponse = { Profile: profile };
             return GetProfileResponse;
         };
         port.GetProfiles = function (args) {
-            var GetProfilesResponse = { Profiles: [profile] };
+            var GetProfilesResponse = { Profiles: [profile, profile2] };
             return GetProfilesResponse;
         };
         port.CreateProfile = function (args) {
