@@ -205,6 +205,12 @@ class StreamServer:
         self.stop()
         self.stayAwake = False
     
+    def _create_factory(self, launch_str):
+        factory = GstRtspServer.RTSPMediaFactory()
+        factory.set_launch(launch_str)
+        factory.set_shared(True)
+        return factory
+
     def check_range(self, value, value_range):
         return value >= value_range[0] and value <= value_range[1]
         
@@ -487,21 +493,39 @@ class StreamServer:
 
         log.debug(launch_str)
         cam_mutex.acquire()
+
         try:
-            log.info("Starting service on port "+str(self.port)+" at url /"+self.name)
-            self.factory.set_launch(launch_str)
+            log.info("Starting RTSP service on port " + str(self.port))
             self.server.set_service(str(self.port))
-            self.mounts.add_factory("/"+str(self.name), self.factory)
+
+            # FIRST STREAM
+            launch_str_1 = (
+                'rtspsrc location=rtsp://admin:Aragats777@192.168.0.31:3333/stream latency=0 ! '
+                'rtph264depay ! h264parse config-interval=1 ! rtph264pay name=pay0 pt=96'
+            )
+            factory1 = self._create_factory(launch_str_1)
+            self.mounts.add_factory("/stream", factory1)
+
+            # SECOND STREAM
+            launch_str_2 = (
+                'rtspsrc location=rtsp://admin:Aragats777@192.168.0.31:1111/ latency=0 ! '
+                'rtph264depay ! h264parse config-interval=1 ! rtph264pay name=pay0 pt=96'
+            )
+            factory2 = self._create_factory(launch_str_2)
+            self.mounts.add_factory("/altstream", factory2)
+
             self.context_id = self.server.attach(None)
-            
-            #mainloop.run()
+
             self.mainthread = Thread(target=self.mainloop.run)
             self.mainthread.daemon = True
             self.mainthread.start()
             self.running = True
+
         finally:
             cam_mutex.release()
-        log.info("Running RTSP Server")
+
+        log.info("Running dual RTSP Server: /stream and /altstream")
+
         
     def start(self):
         p = subprocess.Popen("ps -ax | grep rpos.js", shell=True, stdout=subprocess.PIPE)
