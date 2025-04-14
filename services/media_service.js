@@ -281,7 +281,7 @@ var MediaService = (function (_super) {
             if (args.ProfileToken === "profile_token_2") {
                 streamName = _this.config.RTSPAltName;
             }
-        
+    
             return {
                 MediaUri: {
                     Uri: "rtsp://" + rtspAddress + ":" + _this.config.RTSPPort + "/" + streamName,

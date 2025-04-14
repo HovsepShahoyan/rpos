@@ -71,7 +71,10 @@ class StreamServer:
         self.mainloop = GObject.MainLoop()
         self.server = GstRtspServer.RTSPServer()
         self.mounts = self.server.get_mount_points()
-        
+        self.current_pipeline = None
+        self.current_launch_str = None
+
+
         self.device = device
         self.type = type
         self.file = file
@@ -209,7 +212,31 @@ class StreamServer:
         factory = GstRtspServer.RTSPMediaFactory()
         factory.set_launch(launch_str)
         factory.set_shared(True)
+
+        def on_media_configure(factory, media):
+            self.current_launch_str = launch_str
+            #pipeline = media.get_pipeline()
+            #self.current_pipeline = pipeline
+
+            #bus = pipeline.get_bus()
+            #bus.add_signal_watch()
+            #bus.connect("message", self._on_gst_message)
+
+            log.info("[GStreamer] Bus watcher attached for stream errors.")
+
+        factory.connect("media-configure", on_media_configure)
         return factory
+
+    def _restart_pipeline(self):
+        log.warning("[GStreamer] Restarting RTSP stream pipeline due to failure.")
+        if self.current_pipeline:
+            self.current_pipeline.set_state(Gst.State.NULL)
+            self.current_pipeline = None
+            time.sleep(1.0)
+            if self.current_launch_str:
+                pipeline = Gst.parse_launch(self.current_launch_str)
+                pipeline.set_state(Gst.State.PLAYING)
+                log.info("[GStreamer] RTSP pipeline restarted.")
 
     def check_range(self, value, value_range):
         return value >= value_range[0] and value <= value_range[1]
@@ -500,22 +527,35 @@ class StreamServer:
 
             # FIRST STREAM
             launch_str_1 = (
-                'rtspsrc location=rtsp://admin:Aragats777@192.168.0.31:3333/stream latency=0 ! '
-                'rtph264depay ! h264parse config-interval=1 ! rtph264pay name=pay0 pt=96'
+                'rtspsrc location=rtsp://admin:Aragats777@192.168.0.31:3333/stream timeout=5000000 connection-speed=30000000 '
+                'do-reconnect=true drop-on-latency=true latency=100 ! '
+                'rtph264depay ! queue ! h264parse config-interval=1 ! '
+                'video/x-h264,stream-format=byte-stream,alignment=au ! queue ! '
+                'nvv4l2decoder enable-max-performance=1 ! queue ! nvvidconv ! queue ! '
+                'nvv4l2h264enc insert-sps-pps=true idrinterval=15 bitrate=2000000 maxperf-enable=1 ! queue ! '
+                'rtph264pay name=pay0 pt=96 config-interval=1'
             )
             factory1 = self._create_factory(launch_str_1)
+            self.stream_launch_str = launch_str_1 
             self.mounts.add_factory("/stream", factory1)
 
-            # SECOND STREAM
-            launch_str_2 = (
-                'rtspsrc location=rtsp://admin:Aragats777@192.168.0.31:1111/ latency=0 ! '
-                'rtph264depay ! h264parse config-interval=1 ! rtph264pay name=pay0 pt=96'
-            )
-            factory2 = self._create_factory(launch_str_2)
-            self.mounts.add_factory("/altstream", factory2)
+            # SECOND STREAM (same pay0, different pipeline, guarded)
+            try:
+                launch_str_2 = (
+                'rtspsrc location=rtsp://admin:Aragats777@192.168.0.31:1111 timeout=5000000 connection-speed=30000000 '
+                'do-reconnect=true drop-on-latency=true latency=100 ! '
+                'rtph264depay ! queue ! h264parse config-interval=1 ! '
+                'video/x-h264,stream-format=byte-stream,alignment=au ! queue ! '
+                'nvv4l2decoder enable-max-performance=1 ! queue ! nvvidconv ! queue ! '
+                'nvv4l2h264enc insert-sps-pps=true idrinterval=15 bitrate=2000000 maxperf-enable=1 ! queue ! '
+                'rtph264pay name=pay0 pt=96 config-interval=1'
+                )
+                factory2 = self._create_factory(launch_str_2)
+                self.mounts.add_factory("/altstream", factory2)
+            except Exception as e:
+                log.warning("[RTSP] Could not mount /altstream: " + str(e))
 
             self.context_id = self.server.attach(None)
-
             self.mainthread = Thread(target=self.mainloop.run)
             self.mainthread.daemon = True
             self.mainthread.start()
@@ -534,7 +574,6 @@ class StreamServer:
             if os.stat(self.file).st_mtime != self.configDate:
                 log.info("Updating stream settings")
                 self.readConfig()
-                self.updateConfig()
             else:
                 time.sleep(1.0)
         log.warning("Quitting service")
@@ -557,14 +596,17 @@ class StreamServer:
             finally:
                 cam_mutex.release()
     
-    def updateConfig(self):
+    #def updateConfig(self):
         #TODO: Manipulate the running pipe rather than destroying and recreating it.
-        self.stop()
-        self.launch()
+        #self.stop()
+        #self.launch()
 
     def b(self):
         print("Br")
     
+
+i = 0 
+
 if __name__ == '__main__':
     codec = 0         # Default to H264
     if args.mjpeg:
@@ -573,6 +615,8 @@ if __name__ == '__main__':
                                 args.rtspresolutionwidth, args.rtspresolutionheight,\
                                 codec)
     streamServer.readConfig()
+    i = i + 1
+    #if (i == 0):
     streamServer.launch()
     streamServer.start()
 
