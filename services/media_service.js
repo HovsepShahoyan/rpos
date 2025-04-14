@@ -215,7 +215,7 @@ var MediaService = (function (_super) {
             },
             VideoSourceConfiguration: videoSourceConfiguration,
             VideoEncoderConfiguration: videoEncoderConfiguration,
-            PTZConfiguration: this.ptz_service.ptzConfiguration
+            PTZConfiguration: this.ptz_service.ptzConfiguration1
         };
 
         var profile2 = {
@@ -225,7 +225,7 @@ var MediaService = (function (_super) {
             },
             VideoSourceConfiguration: videoSourceConfiguration,
             VideoEncoderConfiguration: videoEncoderConfiguration,
-            PTZConfiguration: this.ptz_service.ptzConfiguration
+            PTZConfiguration: this.ptz_service.ptzConfiguration2
         };
 
         port.GetServiceCapabilities = function (args) {
@@ -293,8 +293,10 @@ var MediaService = (function (_super) {
         };
 
         port.GetProfile = function (args) {
-            var GetProfileResponse = { Profile: profile };
-            return GetProfileResponse;
+            if (args.ProfileToken === "profile_token_2") {
+                return { Profile: profile2 };
+            }
+            return { Profile: profile };
         };
         port.GetProfiles = function (args) {
             var GetProfilesResponse = { Profiles: [profile, profile2] };

@@ -34,7 +34,9 @@ var PTZService = (function (_super) {
             onReady: function () { return console.log('ptz_service started'); }
         };
         for (var i = 1; i <= 255; i++) {
-            _this.presetArray.push({ profileToken: 'profile_token', presetName: '', presetToken: i.toString(), used: false });
+           // _this.presetArray.push({ profileToken: 'profile_token', presetName: '', presetToken: i.toString(), used: false });
+            _this.presetArray.push({ profileToken: 'profile_token_1', presetName: '', presetToken: i.toString(), used: false });
+            _this.presetArray.push({ profileToken: 'profile_token_2', presetName: '', presetToken: `2-${i}`, used: false });
         }
         _this.extendService();
         return _this;
@@ -133,13 +135,13 @@ var PTZService = (function (_super) {
                 Max: 'PT10S'
             },
         };
-        this.ptzConfiguration = {
+        this.ptzConfiguration1 = {
             attributes: {
-                token: "ptz_config_token_0"
+                token: "ptz_config_token_1"
             },
-            Name: "PTZ Configuration",
+            Name: "PTZ Configuration 1",
             UseCount: 1,
-            NodeToken: "ptz_node_token_0",
+            NodeToken: "ptz_node_token_1",
             DefaultAbsolutePantTiltPositionSpace: 'http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace',
             DefaultAbsoluteZoomPositionSpace: 'http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace',
             DefaultRelativePanTiltTranslationSpace: 'http://www.onvif.org/ver10/tptz/PanTiltSpaces/TranslationGenericSpace',
@@ -163,6 +165,38 @@ var PTZService = (function (_super) {
             },
             DefaultPTZTimeout: 'PT5S'
         };
+
+        this.ptzConfiguration2 = {
+            attributes: {
+                token: "ptz_config_token_2"
+            },
+            Name: "PTZ Configuration 2",
+            UseCount: 1,
+            NodeToken: "ptz_node_token_2",
+            DefaultAbsolutePantTiltPositionSpace: 'http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace',
+            DefaultAbsoluteZoomPositionSpace: 'http://www.onvif.org/ver10/tptz/ZoomSpaces/PositionGenericSpace',
+            DefaultRelativePanTiltTranslationSpace: 'http://www.onvif.org/ver10/tptz/PanTiltSpaces/TranslationGenericSpace',
+            DefaultRelativeZoomTranslationSpace: 'http://www.onvif.org/ver10/tptz/ZoomSpaces/TranslationGenericSpace',
+            DefaultContinuousPanTiltVelocitySpace: 'http://www.onvif.org/ver10/tptz/PanTiltSpaces/VelocityGenericSpace',
+            DefaultContinuousZoomVelocitySpace: 'http://www.onvif.org/ver10/tptz/ZoomSpaces/VelocityGenericSpace',
+            DefaultPTZSpeed: {
+                PanTilt: {
+                    attributes: {
+                        x: 1.0,
+                        y: 1.0,
+                        space: 'http://www.onvif.org/ver10/tptz/PanTiltSpaces/GenericSpeedSpace'
+                    }
+                },
+                Zoom: {
+                    attributes: {
+                        x: 1,
+                        space: 'http://www.onvif.org/ver10/tptz/ZoomSpaces/ZoomGenericSpeedSpace'
+                    }
+                }
+            },
+            DefaultPTZTimeout: 'PT5S'
+        };
+
         port.GetServiceCapabilities = function (args) {
             var GetServiceCapabilitiesResponse = {
                 Capabilities: {
@@ -177,17 +211,31 @@ var PTZService = (function (_super) {
             };
             return GetServiceCapabilitiesResponse;
         };
+        // GetConfigurationOptions
         port.GetConfigurationOptions = function (args) {
-            var GetConfigurationOptionsResponse = { PTZConfigurationOptions: ptzConfigurationOptions };
-            return GetConfigurationOptionsResponse;
+            return {
+                PTZConfigurationOptions: ptzConfigurationOptions
+            };
         };
+
+        // GetConfiguration
         port.GetConfiguration = function (args) {
-            var GetConfigurationResponse = { PTZConfiguration: _this.ptzConfiguration };
-            return GetConfigurationResponse;
+            if (args && args.ConfigurationToken === "ptz_config_token_2") {
+                return {
+                    PTZConfiguration: _this.ptzConfiguration2
+                };
+            } else {
+                return {
+                    PTZConfiguration: _this.ptzConfiguration1
+                };
+            }
         };
+
+        // GetConfigurations
         port.GetConfigurations = function (args) {
-            var GetConfigurationsResponse = { PTZConfiguration: _this.ptzConfiguration };
-            return GetConfigurationsResponse;
+            return {
+                PTZConfiguration: [_this.ptzConfiguration1, _this.ptzConfiguration2]
+            };
         };
         port.GetNode = function (args) {
             var GetNodeResponse = { PTZNode: node };
