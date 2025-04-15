@@ -16,10 +16,15 @@
 "digital_zoom":4,
 "far_focus":false,
 "near_focus":false,
-"tele_zoom":true,
+"tele_zoom":false,
 "wide_zoom":false,
 "day_zoom":1,
-"palette":1}
+"palette":1,
+"ptz_up":false,
+"ptz_down":true,
+"ptz_right":false,
+"ptz_left":false,
+"ptz_middle":false}
 ,
 "CodecControls":
 {
