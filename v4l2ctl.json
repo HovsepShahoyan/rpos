@@ -24,7 +24,13 @@
 "ptz_down":true,
 "ptz_right":false,
 "ptz_left":false,
-"ptz_middle":false}
+"ptz_middle":false,
+"acc_az":100,
+"acc_el":100,
+"min_fr_az":1,
+"min_fr_el":1,
+"max_fr_az":1,
+"max_fr_el":1}
 ,
 "CodecControls":
 {

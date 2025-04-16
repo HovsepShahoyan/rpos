@@ -205,6 +205,23 @@ var MediaService = (function (_super) {
             SourceToken: "video_src_token",
             Bounds: { attributes: { x: 0, y: 0, width: 1920, height: 1080 } }
         };
+        var videoSource2 = {
+            attributes: {
+                token: "video_src_token_2"
+            },
+            Framerate: 25,
+            Resolution: { Width: 1920, Height: 1280 }
+        };
+        var videoSourceConfiguration2 = {
+            Name: "Alt Source",
+            UseCount: 0,
+            attributes: {
+                token: "video_src_config_token_2"
+            },
+            SourceToken: "video_src_token_2",
+            Bounds: { attributes: { x: 0, y: 0, width: 1920, height: 1080 } }
+        };
+
         var audioEncoderConfigurationOptions = {
             Options: []
         };
@@ -223,11 +240,11 @@ var MediaService = (function (_super) {
             attributes: {
               token: "profile_token_2"
             },
-            VideoSourceConfiguration: videoSourceConfiguration,
+            VideoSourceConfiguration: videoSourceConfiguration2,
             VideoEncoderConfiguration: videoEncoderConfiguration,
             PTZConfiguration: this.ptz_service.ptzConfiguration2
         };
-
+        
         port.GetServiceCapabilities = function (args) {
             var GetServiceCapabilitiesResponse = {
                 Capabilities: {
@@ -311,7 +328,7 @@ var MediaService = (function (_super) {
             return DeleteProfileResponse;
         };
         port.GetVideoSources = function (args) {
-            var GetVideoSourcesResponse = { VideoSources: [videoSource] };
+            var GetVideoSourcesResponse = { VideoSources: [videoSource, videoSource2] };
             return GetVideoSourcesResponse;
         };
         port.GetVideoSourceConfigurations = function (args) {
@@ -327,7 +344,7 @@ var MediaService = (function (_super) {
             return GetVideoEncoderConfigurationsResponse;
         };
         port.GetVideoEncoderConfiguration = function (args) {
-            var GetVideoEncoderConfigurationResponse = { Configuration: videoEncoderConfiguration };
+            var GetVideoEncoderConfigurationResponse = { Configuration: videoEncoderConfiguration, videoEncoderConfiguration2 };
             return GetVideoEncoderConfigurationResponse;
         };
         port.SetVideoEncoderConfiguration = function (args) {
@@ -369,11 +386,31 @@ var MediaService = (function (_super) {
             var GetAudioEncoderConfigurationOptionsResponse = { Options: [{}] };
             return GetAudioEncoderConfigurationOptionsResponse;
         };
-        port.GetCompatibleVideoSourceConfigurations = function (args) {
+        /*port.GetCompatibleVideoSourceConfigurations = function (args) {
             var GetCompatibleVideoSourceConfigurationsResponse = { Configurations: [videoSourceConfiguration] };
             return GetCompatibleVideoSourceConfigurationsResponse;
+        };*/
+
+        port.GetCompatibleVideoSourceConfigurations = function (args) {
+            return {
+                Configurations: [
+                    {
+                        attributes: { token: 'video_cfg_token' },
+                        Name: 'Main Stream',
+                        SourceToken: 'video_src_token',
+                        Bounds: { x: 0, y: 0, width: 1920, height: 1080 }
+                    },
+                    {
+                        attributes: { token: 'video_cfg_token_2' },
+                        Name: 'Alt Stream',
+                        SourceToken: 'video_src_token_2',
+                        Bounds: { x: 0, y: 0, width: 1920, height: 1080 }
+                    }
+                ]
+            };
         };
-        port.GetVideoSourceConfigurationOptions = function (Args) {
+
+        /*port.GetVideoSourceConfigurationOptions = function (Args) {
             var GetVideoSourceConfigurationOptionsResponse = {
                 Options: {
                     BoundsRange: {
@@ -394,11 +431,26 @@ var MediaService = (function (_super) {
                             Max: 1080
                         }
                     },
-                    VideoSourceTokensAvailable: "video_src_token"
+                    VideoSourceTokensAvailable: ["video_src_token", "video_src_token2"]
                 }
             };
             return GetVideoSourceConfigurationOptionsResponse;
+        };*/
+
+        port.GetVideoSourceConfigurationOptions = function (args) {
+            return {
+                Options: {
+                    BoundsRange: {
+                        XRange: { Min: 0, Max: 0 },
+                        YRange: { Min: 0, Max: 0 },
+                        WidthRange: { Min: 1920, Max: 1920 },
+                        HeightRange: { Min: 1080, Max: 1080 }
+                    },
+                    VideoSourceTokensAvailable: ["video_src_token", "video_src_token_2"]
+                }
+            };
         };
+        
     };
     return MediaService;
 }(SoapService));
