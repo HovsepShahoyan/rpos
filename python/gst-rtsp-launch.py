@@ -527,7 +527,7 @@ class StreamServer:
 
             # FIRST STREAM
             launch_str_1 = (
-                'rtspsrc location=rtsp://admin:Aragats777@192.168.0.31:3333/stream timeout=5000000 connection-speed=30000000 '
+                'rtspsrc location=rtsp://admin:Aragats777@192.168.0.21:3333/stream timeout=5000000 connection-speed=30000000 '
                 'do-reconnect=true drop-on-latency=true latency=100 ! '
                 'rtph264depay ! queue ! h264parse config-interval=1 ! '
                 'video/x-h264,stream-format=byte-stream,alignment=au ! queue ! '
@@ -542,7 +542,7 @@ class StreamServer:
             # SECOND STREAM (same pay0, different pipeline, guarded)
             try:
                 launch_str_2 = (
-                'rtspsrc location=rtsp://admin:Aragats777@192.168.0.31:1111 timeout=5000000 connection-speed=30000000 '
+                'rtspsrc location=rtsp://admin:Aragats777@192.168.0.21:1111 timeout=5000000 connection-speed=30000000 '
                 'do-reconnect=true drop-on-latency=true latency=100 ! '
                 'rtph264depay ! queue ! h264parse config-interval=1 ! '
                 'video/x-h264,stream-format=byte-stream,alignment=au ! queue ! '
