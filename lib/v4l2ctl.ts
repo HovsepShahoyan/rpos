@@ -131,32 +131,32 @@ export module v4l2ctl {
             contrast: new UserControl(0, { range: { min: -100, max: 100 } }),
       
             // min=-100 max=100 step=1 default=0 value=0 flags=slider                     
-            saturation: new UserControl(0, { range: { min: -100, max: 100 } }),
+        //    saturation: new UserControl(0, { range: { min: -100, max: 100 } }),
       
             // min=1 max=7999 step=1 default=1000 value=1000 flags=slider                     
-            red_balance: new UserControl(1000, { range: { min: 1, max: 7999 } }),
+            //red_balance: new UserControl(1000, { range: { min: 1, max: 7999 } }),
       
             // min=1 max=7999 step=1 default=1000 value=1000 flags=slider
-            blue_balance: new UserControl(1000, { range: { min: 1, max: 7999 } }),
+           // blue_balance: new UserControl(1000, { range: { min: 1, max: 7999 } }),
       
             // default=0 value=0     
-            horizontal_flip: new UserControl(false, { stringify: stringifyBool }),
+           // horizontal_flip: new UserControl(false, { stringify: stringifyBool }),
       
             // default=0 value=0             
-            vertical_flip: new UserControl(false, { stringify: stringifyBool }),
+           // vertical_flip: new UserControl(false, { stringify: stringifyBool }),
       
             // min=0 max=3 default=1 value=1 | 0: Disabled,1: 50 Hz,2: 60 Hz,3: Auto           
-            power_line_frequency: new UserControl(1, { lookupSet: [{ value: 0, desc: 'Disabled' }, { value: 1, desc: '50 Hz' }, { value: 2, desc: '60 Hz' }, { value: 3, desc: 'Auto' }] }),
+           // power_line_frequency: new UserControl(1, { lookupSet: [{ value: 0, desc: 'Disabled' }, { value: 1, desc: '50 Hz' }, { value: 2, desc: '60 Hz' }, { value: 3, desc: 'Auto' }] }),
       
             // min=-100 max=100 step=1 default=0 value=0 flags=slider
-            sharpness: new UserControl(0, { range: { min: -100, max: 100 } }),
+          //  sharpness: new UserControl(0, { range: { min: -100, max: 100 } }),
       
             // min=0 max=15 default=0 value=0 | 0: None,1: Black & White,2: Sepia,3: Negative,4: Emboss,5: Sketch,6: Sky Blue,7: Grass Green,8: Skin Whiten,9: Vivid,10: Aqua,11: Art Freeze,12: Silhouette,13: Solarization,14: Antique,15: Set Cb/Cr
-            color_effects: new UserControl(0, { lookupSet: [{ value: 0, desc: 'None' }, { value: 1, desc: 'Black & White' }, { value: 2, desc: 'Sepia' }, { value: 3, desc: 'Negative' }, { value: 4, desc: 'Emboss' }, { value: 5, desc: 'Sketch' }, { value: 6, desc: 'Sky Blue' }, { value: 7, desc: 'Grass Green' }, { value: 8, desc: 'Skin Whiten' }, { value: 9, desc: 'Vivid' }, { value: 10, desc: 'Aqua' }, { value: 11, desc: 'Art Freeze' }, { value: 12, desc: 'Silhouette' }, { value: 13, desc: 'Solarization' }, { value: 14, desc: 'Antique' }, { value: 15, desc: 'Set Cb/Cr' }] }),
+          //  color_effects: new UserControl(0, { lookupSet: [{ value: 0, desc: 'None' }, { value: 1, desc: 'Black & White' }, { value: 2, desc: 'Sepia' }, { value: 3, desc: 'Negative' }, { value: 4, desc: 'Emboss' }, { value: 5, desc: 'Sketch' }, { value: 6, desc: 'Sky Blue' }, { value: 7, desc: 'Grass Green' }, { value: 8, desc: 'Skin Whiten' }, { value: 9, desc: 'Vivid' }, { value: 10, desc: 'Aqua' }, { value: 11, desc: 'Art Freeze' }, { value: 12, desc: 'Silhouette' }, { value: 13, desc: 'Solarization' }, { value: 14, desc: 'Antique' }, { value: 15, desc: 'Set Cb/Cr' }] }),
             // min=0 max=360 step=90 default=0 value=0
-            rotate: new UserControl(0, { range: { min: 0, max: 360 } }),
-            // min=0 max=65535 step=1 default=32896 value=32896
-            color_effects_cbcr: new UserControl(32896, { range: { min: 0, max: 65535 } }),
+          //  rotate: new UserControl(0, { range: { min: 0, max: 360 } }),
+           // // min=0 max=65535 step=1 default=32896 value=32896
+          //  color_effects_cbcr: new UserControl(32896, { range: { min: 0, max: 65535 } }),
         },
         CodecControls: {
             // min=0 max=1 default=0 value=0 flags=update | 0: Variable Bitrate,1: Constant Bitrate
