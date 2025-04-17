@@ -154,8 +154,8 @@ class StreamServer:
         ##################################################################################################################################################################
         # Saturation
         #    0 to 100: Tweak saturation (default=0)
-        self.saturation_range = [0, 100]
-        self.saturation = 0
+        #self.saturation_range = [0, 100]
+        #self.saturation = 0
         
         ##################################################################################################################################################################
         # Contrast
@@ -388,10 +388,10 @@ class StreamServer:
                 #             log.error(f"[UART ERROR] Failed to launch contrast script: {e}")
 
 
-                if self.check_range(config["UserControls"]["saturation"], self.saturation_range):
-                    self.saturation = config["UserControls"]["saturation"]
-                else:
-                    log.error("saturation out of range: " + str(config["UserControls"]["saturation"]))
+                # if self.check_range(config["UserControls"]["saturation"], self.saturation_range):
+                #     self.saturation = config["UserControls"]["saturation"]
+                # else:
+                #     log.error("saturation out of range: " + str(config["UserControls"]["saturation"]))
 
                 if self.check_range(config["UserControls"]["sharpness"], self.sharpness_range):
                     self.sharpness = config["UserControls"]["sharpness"]
