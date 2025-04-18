@@ -28,7 +28,8 @@
 "deg_enc_movement_el":0,
 "enc_deg_movement_el":25000,
 "deg_step_movement_el":-90,
-"step_deg_movement_el":-32439}
+"step_deg_movement_el":-32439,
+"range_finder":false}
 ,
 "CodecControls":
 {
