@@ -1,14 +1,14 @@
 {
 "UserControls":
 {
-"brightness":100,
+"brightness":72,
 "contrast":84,
-"palette":1,
+"palette":0,
 "far_focus":false,
 "near_focus":false,
 "tele_zoom":false,
 "wide_zoom":false,
-"digital_zoom":4,
+"digital_zoom":3,
 "day_zoom":1,
 "ptz_up":false,
 "ptz_down":false,

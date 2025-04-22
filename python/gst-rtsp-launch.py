@@ -234,15 +234,13 @@ class StreamServer:
         factory.connect("media-configure", on_media_configure)
         return factory
     
-    def start_opencv_overlay_stream(self, mount_name, rtsp_input_url):
+    def start_opencv_overlay_stream(self, mount_name, rtsp_input_url, overlay_path):
         import cv2
         import numpy as np
+        import os
         from gi.repository import Gst, GstRtspServer
 
-        overlay_path = "/tmp/active_cross.png"
-        #cap = cv2.VideoCapture(rtsp_input_url)
-        cap = cv2.VideoCapture(f"rtspsrc location={rtsp_input_url} latency=0 ! rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! appsink", cv2.CAP_GSTREAMER)
-
+        cap = cv2.VideoCapture(rtsp_input_url)
 
         if not cap.isOpened():
             raise Exception(f"[ERROR] Cannot open RTSP stream: {rtsp_input_url}")
@@ -251,15 +249,23 @@ class StreamServer:
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25
 
+        # pipeline_str = (
+        #     f'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME '
+        #     f'caps=video/x-raw,format=BGR,width={width},height={height},framerate={fps}/1 '
+        #     f'! videoconvert ! video/x-raw,format=NV12,width={width},height={height} '
+        #     f'! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,width={width},height={height},framerate={fps}/1 '
+        #     f'! nvv4l2h264enc insert-sps-pps=true idrinterval=15 maxperf-enable=1 bitrate=2000000 ! '
+        #     f'rtph264pay name=pay0 pt=96 config-interval=1'
+        # )
+
         pipeline_str = (
             f'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME '
             f'caps=video/x-raw,format=BGR,width={width},height={height},framerate={fps}/1 '
             f'! videoconvert ! video/x-raw,format=NV12,width={width},height={height} '
             f'! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,width={width},height={height},framerate={fps}/1 '
             f'! nvv4l2h264enc insert-sps-pps=true idrinterval=15 maxperf-enable=1 bitrate=2000000 ! '
-            f'rtph264pay name=pay0 pt=96 config-interval=1'
+            f'h264parse ! rtph264pay config-interval=1 name=pay0 pt=96'
         )
-
 
         factory = GstRtspServer.RTSPMediaFactory()
         factory.set_launch(pipeline_str)
@@ -272,11 +278,7 @@ class StreamServer:
             def push_frame(_appsrc, _):
                 nonlocal frame_count
                 ret, frame = cap.read()
-                if not ret or frame is None or frame.size == 0:
-                    log.warning(f"[{mount_name.upper()}] Reinitializing capture for {rtsp_input_url}")
-                    cap.release()
-                    time.sleep(0.5)
-                    cap.open(rtsp_input_url)
+                if not ret:
                     return
 
                 if os.path.exists(overlay_path):
@@ -308,7 +310,6 @@ class StreamServer:
 
         factory.connect("media-configure", on_configure)
         self.mounts.add_factory(f"/{mount_name}", factory)
-
 
     def _restart_pipeline(self):
         log.warning("[GStreamer] Restarting RTSP stream pipeline due to failure.")
@@ -623,11 +624,10 @@ class StreamServer:
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
             wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:3333/stream")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.31:3333/stream")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.31:3333/stream", "/tmp/active_cross1.png")
 
             wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.31:1111/")
-
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.31:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
