@@ -238,6 +238,7 @@ class StreamServer:
         import cv2
         import numpy as np
         import os
+        import json
         from gi.repository import Gst, GstRtspServer
 
         cap = cv2.VideoCapture(rtsp_input_url)
@@ -248,15 +249,6 @@ class StreamServer:
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25
-
-        # pipeline_str = (
-        #     f'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME '
-        #     f'caps=video/x-raw,format=BGR,width={width},height={height},framerate={fps}/1 '
-        #     f'! videoconvert ! video/x-raw,format=NV12,width={width},height={height} '
-        #     f'! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,width={width},height={height},framerate={fps}/1 '
-        #     f'! nvv4l2h264enc insert-sps-pps=true idrinterval=15 maxperf-enable=1 bitrate=2000000 ! '
-        #     f'rtph264pay name=pay0 pt=96 config-interval=1'
-        # )
 
         pipeline_str = (
             f'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME '
@@ -271,31 +263,69 @@ class StreamServer:
         factory.set_launch(pipeline_str)
         factory.set_shared(True)
 
+        coords_path = f"/tmp/overlay_coords1.json" if mount_name == "stream" else f"/tmp/overlay_coords2.json"
+
         def on_configure(factory, media):
             appsrc = media.get_element().get_child_by_name("source")
             frame_count = 0
 
             def push_frame(_appsrc, _):
                 nonlocal frame_count
+                nonlocal frame_count, cap  # make cap reassignable
+
                 ret, frame = cap.read()
                 if not ret:
-                    return
+                    log.debug("[Overlay] Failed to grab frame from camera, retrying...")
+                    cap.release()
+                    time.sleep(0.2)
+                    cap = cv2.VideoCapture(rtsp_input_url)
 
+                    # Try once more right after reopening
+                    ret, frame = cap.read()
+                    if not ret:
+                        log.debug("[Overlay] Re-open failed — skipping frame")
+                        return
+
+                # Load coordinates
+                h, w = frame.shape[:2]
+                x1, y1 = w // 2, h // 2
+                if os.path.exists(coords_path):
+                    try:
+                        with open(coords_path, "r") as f:
+                            coords = json.load(f)
+                            x1 = int(coords.get("x", x1))
+                            y1 = int(coords.get("y", y1))
+                            log.debug(f"[Overlay] Read coordinates: x={x1}, y={y1}")
+                    except Exception as e:
+                        log.debug(f"[Overlay] Error reading {coords_path}: {e}")
+
+                # Load overlay image
                 if os.path.exists(overlay_path):
                     overlay = cv2.imread(overlay_path, cv2.IMREAD_UNCHANGED)
-                    if overlay is not None and overlay.shape[2] == 4:
-                        h, w = frame.shape[:2]
+                    if overlay is None:
+                        log.debug(f"[Overlay] Failed to load PNG from {overlay_path}")
+                    elif overlay.shape[2] != 4:
+                        log.debug(f"[Overlay] Image at {overlay_path} has no alpha channel")
+                    else:
                         oh, ow = overlay.shape[:2]
-                        x1, y1 = w // 2 - ow // 2, h // 2 - oh // 2
-                        x2, y2 = x1 + ow, y1 + oh
-                        if y2 <= h and x2 <= w:
-                            alpha = overlay[:, :, 3] / 255.0
-                            for c in range(3):
-                                frame[y1:y2, x1:x2, c] = (
-                                    alpha * overlay[:, :, c] +
-                                    (1 - alpha) * frame[y1:y2, x1:x2, c]
-                                )
+                        x1 = max(0, x1 - ow // 2)
+                        y1 = max(0, y1 - oh // 2)
+                        x2 = min(w, x1 + ow)
+                        y2 = min(h, y1 + oh)
 
+                        log.debug(f"[Overlay] Drawing at: x1={x1}, y1={y1}, x2={x2}, y2={y2}, frame: {w}x{h}, overlay: {ow}x{oh}")
+
+                        crop_overlay = overlay[0:(y2 - y1), 0:(x2 - x1)]
+                        alpha = crop_overlay[:, :, 3] / 255.0
+                        for c in range(3):
+                            frame[y1:y2, x1:x2, c] = (
+                                alpha * crop_overlay[:, :, c] +
+                                (1 - alpha) * frame[y1:y2, x1:x2, c]
+                            )
+                else:
+                    log.debug(f"[Overlay] PNG not found at {overlay_path}")
+
+                # Push to GStreamer
                 data = frame.tobytes()
                 buf = Gst.Buffer.new_allocate(None, len(data), None)
                 buf.fill(0, data)
