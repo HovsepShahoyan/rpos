@@ -251,11 +251,12 @@ class StreamServer:
         fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25
 
         pipeline_str = (
-            f'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME '
+            f'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME do-timestamp=true '
             f'caps=video/x-raw,format=BGR,width={width},height={height},framerate={fps}/1 '
-            f'! videoconvert ! video/x-raw,format=NV12,width={width},height={height} '
-            f'! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,width={width},height={height},framerate={fps}/1 '
-            f'! nvv4l2h264enc insert-sps-pps=true idrinterval=15 maxperf-enable=1 bitrate=2000000 ! '
+            f'! queue leaky=downstream max-size-buffers=5 ! '
+            f'videoconvert n-threads=2 ! video/x-raw,format=I420 ! '
+            f'nvvidconv ! video/x-raw(memory:NVMM),format=NV12,width={width},height={height},framerate={fps}/1 '
+            f'! nvv4l2h264enc insert-sps-pps=true idrinterval=15 maxperf-enable=1 bitrate=4000000 preset-level=1 rc-mode=vbr ! '
             f'h264parse ! rtph264pay config-interval=1 name=pay0 pt=96'
         )
 
@@ -269,25 +270,35 @@ class StreamServer:
             appsrc = media.get_element().get_child_by_name("source")
             frame_count = 0
 
+            retry_count = 0
+            MAX_RETRIES = 5
+
             def push_frame(_appsrc, _):
-                nonlocal frame_count
-                nonlocal frame_count, cap  # make cap reassignable
+                nonlocal frame_count, cap
 
-                ret, frame = cap.read()
-                if not ret:
-                    log.debug("[Overlay] Failed to grab frame from camera, retrying...")
-                    cap.release()
-                    time.sleep(0.2)
-                    cap = cv2.VideoCapture(rtsp_input_url)
+                MAX_RETRIES = 5
+                retry_counter = 0
+                h, w = 720, 1280  # fallback resolution
 
-                    # Try once more right after reopening
+                while True:
                     ret, frame = cap.read()
-                    if not ret:
-                        log.debug("[Overlay] Re-open failed — skipping frame")
-                        return
+                    if ret and frame is not None:
+                        break
 
-                # Load coordinates
+                    log.warning("[Overlay] Failed to grab frame from camera, retrying...")
+                    retry_counter += 1
+                    time.sleep(0.3)
+
+                    if retry_counter >= MAX_RETRIES:
+                        log.error("[Overlay] Too many frame failures — reopening stream.")
+                        cap.release()
+                        time.sleep(0.5)
+                        cap = cv2.VideoCapture(rtsp_input_url)
+                        retry_counter = 0
+
                 h, w = frame.shape[:2]
+
+                # === Read crosshair coords ===
                 x1, y1 = w // 2, h // 2
                 if os.path.exists(coords_path):
                     try:
@@ -295,46 +306,63 @@ class StreamServer:
                             coords = json.load(f)
                             x1 = int(coords.get("x", x1))
                             y1 = int(coords.get("y", y1))
-                            log.debug(f"[Overlay] Read coordinates: x={x1}, y={y1}")
                     except Exception as e:
-                        log.debug(f"[Overlay] Error reading {coords_path}: {e}")
+                        log.warning(f"[Overlay] Failed to read crosshair coords: {e}")
 
-                # Load overlay image
+                # === Draw overlay PNG safely ===
                 if os.path.exists(overlay_path):
                     overlay = cv2.imread(overlay_path, cv2.IMREAD_UNCHANGED)
-                    if overlay is None:
-                        log.debug(f"[Overlay] Failed to load PNG from {overlay_path}")
-                    elif overlay.shape[2] != 4:
-                        log.debug(f"[Overlay] Image at {overlay_path} has no alpha channel")
-                    else:
+                    if overlay is not None and overlay.shape[2] == 4:
                         oh, ow = overlay.shape[:2]
-                        x1 = max(0, x1 - ow // 2)
-                        y1 = max(0, y1 - oh // 2)
-                        x2 = min(w, x1 + ow)
-                        y2 = min(h, y1 + oh)
+                        x1 = min(x1, w - 1)
+                        y1 = min(y1, h - 1)
 
-                        log.debug(f"[Overlay] Drawing at: x1={x1}, y1={y1}, x2={x2}, y2={y2}, frame: {w}x{h}, overlay: {ow}x{oh}")
+                        x1c = max(0, x1 - ow // 2)
+                        y1c = max(0, y1 - oh // 2)
+                        x2 = min(w, x1c + ow)
+                        y2 = min(h, y1c + oh)
 
-                        crop_overlay = overlay[0:(y2 - y1), 0:(x2 - x1)]
-                        alpha = crop_overlay[:, :, 3] / 255.0
-                        for c in range(3):
-                            frame[y1:y2, x1:x2, c] = (
-                                alpha * crop_overlay[:, :, c] +
-                                (1 - alpha) * frame[y1:y2, x1:x2, c]
-                            )
-                else:
-                    log.debug(f"[Overlay] PNG not found at {overlay_path}")
+                        if x2 > x1c and y2 > y1c:
+                            crop_overlay = overlay[0:(y2 - y1c), 0:(x2 - x1c)]
+                            alpha = crop_overlay[:, :, 3] / 255.0
+                            for c in range(3):
+                                frame[y1c:y2, x1c:x2, c] = (
+                                    alpha * crop_overlay[:, :, c] +
+                                    (1 - alpha) * frame[y1c:y2, x1c:x2, c]
+                                )
 
-                # Push to GStreamer
-                data = frame.tobytes()
-                buf = Gst.Buffer.new_allocate(None, len(data), None)
-                buf.fill(0, data)
-                duration = Gst.SECOND // fps
-                timestamp = frame_count * duration
-                buf.pts = buf.dts = timestamp
-                buf.duration = duration
-                frame_count += 1
-                _appsrc.emit("push-buffer", buf)
+                # === Draw X/Y coordinates from shared GPS file ===
+                gps_path = "/tmp/overlay_coords.json"
+                if os.path.exists(gps_path):
+                    try:
+                        with open(gps_path, "r") as f:
+                            gps = json.load(f)
+                            gps_x = gps.get("x")
+                            gps_y = gps.get("y")
+                            gps_x_str = f"{float(gps_x):.2f}" if gps_x else "?"
+                            gps_y_str = f"{float(gps_y):.2f}" if gps_y else "?"
+                            label = f"X: {gps_x_str}   Y: {gps_y_str}"
+
+                            cv2.putText(frame, label, (30, h - 30),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
+                            cv2.putText(frame, label, (30, h - 30),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+                    except Exception as e:
+                        log.warning(f"[Overlay] Failed to read GPS coords: {e}")
+
+                # === Push to GStreamer ===
+                try:
+                    data = frame.tobytes()
+                    buf = Gst.Buffer.new_allocate(None, len(data), None)
+                    buf.fill(0, data)
+                    duration = Gst.SECOND // fps
+                    timestamp = frame_count * duration
+                    buf.pts = buf.dts = timestamp
+                    buf.duration = duration
+                    frame_count += 1
+                    _appsrc.emit("push-buffer", buf)
+                except Exception as e:
+                    log.error(f"[Overlay] Failed to push buffer: {e}")
 
             appsrc.connect("need-data", push_frame)
 
