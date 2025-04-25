@@ -1,8 +1,8 @@
 {
 "UserControls":
 {
-"brightness":100,
-"contrast":24,
+"brightness":53,
+"contrast":44,
 "palette":0,
 "far_focus":false,
 "near_focus":false,
@@ -17,7 +17,7 @@
 "ptz_right":false,
 "ptz_left":false,
 "ptz_middle":false,
-"acc_az":100,
+"acc_az":5,
 "min_fr_az":1,
 "max_fr_az":1,
 "deg_enc_movement_az":0,
@@ -25,11 +25,11 @@
 "deg_step_movement_az":1,
 "step_deg_movement_az":1,
 "acc_el":50,
-"min_fr_el":1,
-"max_fr_el":1,
-"deg_enc_movement_el":0,
-"enc_deg_movement_el":25000,
-"deg_step_movement_el":-90,
+"min_fr_el":114,
+"max_fr_el":1144,
+"deg_enc_movement_el":21,
+"enc_deg_movement_el":44491,
+"deg_step_movement_el":-53,
 "step_deg_movement_el":-32439,
 "range_finder":false}
 ,

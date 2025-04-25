@@ -331,9 +331,56 @@ class StreamServer:
                                     (1 - alpha) * frame[y1c:y2, x1c:x2, c]
                                 )
 
-                # === Draw X/Y coordinates from shared GPS file ===
-                gps_path = "/tmp/overlay_coords.json"
-                if os.path.exists(gps_path):
+                try:
+                    gps_path    = "/tmp/overlay_coords.json"
+                    angles_path = "/tmp/overlay_angles.json"
+
+                    # ————————————————————————————————
+                    # 1) Draw GPS X/Y at the very bottom
+                    # ————————————————————————————————
+                    if os.path.exists(gps_path):
+                        with open(gps_path, "r") as f:
+                            gps = json.load(f)
+                        # safe‐convert to floats
+                        try:
+                            gx = float(gps.get("x", 0.0))
+                            gy = float(gps.get("y", 0.0))
+                        except:
+                            gx = gy = 0.0
+                        gps_label = f"X: {gx:.2f}   Y: {gy:.2f}"
+                        # black outline
+                        cv2.putText(frame, gps_label, (30, h - 30),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
+                        # colored fill
+                        cv2.putText(frame, gps_label, (30, h - 30),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+
+                    # ————————————————————————————————
+                    # 2) Draw Az/El angles just above GPS
+                    # ————————————————————————————————
+                    if os.path.exists(angles_path):
+                        with open(angles_path, "r") as f:
+                            angles = json.load(f)
+                        az_a = angles.get("azimuth_angle", "?")
+                        el_a = angles.get("elevation_angle", "?")
+                        # try to format degrees, else fallback to “?”
+                        try:
+                            az_d = float(angles.get("azimuth_degrees", 0.0))
+                            el_d = float(angles.get("elevation_degrees", 0.0))
+                            az_d_s = f"{az_d:.2f}"
+                            el_d_s = f"{el_d:.2f}"
+                        except:
+                            az_d_s = el_d_s = "?"
+                        angle_label = f"Az: {az_a} ({az_d_s}°)   El: {el_a} ({el_d_s}°)"
+                        # black outline
+                        cv2.putText(frame, angle_label, (30, h - 70),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
+                        # colored fill
+                        cv2.putText(frame, angle_label, (30, h - 70),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+                except Exception as e:
+                    log.warning(f"[Overlay] Failed to draw GPS or angles: {e}")
                     try:
                         with open(gps_path, "r") as f:
                             gps = json.load(f)
@@ -348,7 +395,7 @@ class StreamServer:
                             cv2.putText(frame, label, (30, h - 30),
                                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
                     except Exception as e:
-                        log.warning(f"[Overlay] Failed to read GPS coords: {e}")
+                            log.warning(f"[Overlay] Failed to read GPS coords: {e}")
 
                 # === Push to GStreamer ===
                 try:
