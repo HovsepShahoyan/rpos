@@ -254,7 +254,7 @@ class StreamServer:
             f'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME do-timestamp=true '
             f'caps=video/x-raw,format=BGR,width={width},height={height},framerate={fps}/1 '
             f'! queue leaky=downstream max-size-buffers=5 ! '
-            f'videoconvert n-threads=2 ! video/x-raw,format=I420 ! '
+            f'videoconvert n-threads=16 ! video/x-raw,format=I420 ! '
             f'nvvidconv ! video/x-raw(memory:NVMM),format=NV12,width={width},height={height},framerate={fps}/1 '
             f'! nvv4l2h264enc insert-sps-pps=true idrinterval=15 maxperf-enable=1 bitrate=4000000 preset-level=1 rc-mode=vbr ! '
             f'h264parse ! rtph264pay config-interval=1 name=pay0 pt=96'
@@ -728,11 +728,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:3333/stream")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.31:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/stream")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.21:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.31:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.21:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
