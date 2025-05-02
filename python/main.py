@@ -47,7 +47,7 @@ if __name__ == '__main__':
 
     motion_connection.IP = "192.168.0.31"
     motion_connection.Port = 8888
-    devices_connection.IP = "192.168.0.21"
+    devices_connection.IP = "192.168.0.31"
     devices_connection.Port = 2222
 
     client_ui = UI_Manager(app, motion_connection, devices_connection)
