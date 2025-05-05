@@ -239,25 +239,38 @@ class StreamServer:
         import numpy as np
         import os
         import json
+        import threading
+        import time
         from gi.repository import Gst, GstRtspServer
 
         cap = cv2.VideoCapture(rtsp_input_url)
-
         if not cap.isOpened():
             raise Exception(f"[ERROR] Cannot open RTSP stream: {rtsp_input_url}")
 
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25
+        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30  # Target FPS
 
+        # Optimized GStreamer pipeline with hardware acceleration
         pipeline_str = (
             f'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME do-timestamp=true '
             f'caps=video/x-raw,format=BGR,width={width},height={height},framerate={fps}/1 '
-            f'! queue leaky=downstream max-size-buffers=5 ! '
-            f'videoconvert n-threads=16 ! video/x-raw,format=I420 ! '
-            f'nvvidconv ! video/x-raw(memory:NVMM),format=NV12,width={width},height={height},framerate={fps}/1 '
-            f'! nvv4l2h264enc insert-sps-pps=true idrinterval=15 maxperf-enable=1 bitrate=4000000 preset-level=1 rc-mode=vbr ! '
-            f'h264parse ! rtph264pay config-interval=1 name=pay0 pt=96'
+            f'! queue max-size-buffers=20 leaky=downstream '
+            f'! videoconvert n-threads=4 '
+            f'! video/x-raw,format=NV12,width={width},height={height},framerate={fps}/1 '
+            f'! nvvidconv '
+            f'! video/x-raw(memory:NVMM),format=NV12,width={width},height={height},framerate={fps}/1 '
+            f'! nvv4l2h264enc '
+            f'insert-sps-pps=true '
+            f'idrinterval=15 '
+            f'maxperf-enable=1 '
+            f'bitrate=8000000 '  # High bitrate for quality
+            f'preset-level=1 '    # Balanced preset for performance
+            f'profile=high '      # High profile for better quality
+            f'tune=high-complexity '
+            f'rc-mode=vbr '
+            f'! h264parse '
+            f'! rtph264pay config-interval=1 name=pay0 pt=96'
         )
 
         factory = GstRtspServer.RTSPMediaFactory()
@@ -265,51 +278,91 @@ class StreamServer:
         factory.set_shared(True)
 
         coords_path = f"/tmp/overlay_coords1.json" if mount_name == "stream" else f"/tmp/overlay_coords2.json"
+        gps_path = "/tmp/overlay_coords.json"
+        angles_path = "/tmp/overlay_angles.json"
+
+        overlay_data = {
+            "x": None,
+            "y": None,
+            "gps_x": 0.0,
+            "gps_y": 0.0,
+            "az_a": "0.00",
+            "el_a": "0.00",
+            "az_d_s": "0.00",
+            "el_d_s": "0.00"
+        }
+
+        def file_watcher():
+            while True:
+                try:
+                    if os.path.exists(coords_path):
+                        with open(coords_path, "r") as f:
+                            coords = json.load(f)
+                            x = coords.get("x")
+                            y = coords.get("y")
+                            if x is not None:
+                                overlay_data["x"] = int(x)
+                            if y is not None:
+                                overlay_data["y"] = int(y)
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read crosshair coords: {e}")
+
+                try:
+                    if os.path.exists(gps_path):
+                        with open(gps_path, "r") as f:
+                            gps = json.load(f)
+                            overlay_data["gps_x"] = float(gps.get("x", 0.0))
+                            overlay_data["gps_y"] = float(gps.get("y", 0.0))
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read GPS coords: {e}")
+
+                try:
+                    if os.path.exists(angles_path):
+                        with open(angles_path, "r") as f:
+                            angles = json.load(f)
+                            overlay_data["az_a"] = str(angles.get("azimuth_angle", "0.00"))
+                            overlay_data["el_a"] = str(angles.get("elevation_angle", "0.00"))
+                            overlay_data["az_d_s"] = f"{float(angles.get('azimuth_degrees', 0.0)):.2f}"
+                            overlay_data["el_d_s"] = f"{float(angles.get('elevation_degrees', 0.0)):.2f}"
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read angle data: {e}")
+
+                time.sleep(1.0)
+
+        watcher_thread = threading.Thread(target=file_watcher, daemon=True)
+        watcher_thread.start()
 
         def on_configure(factory, media):
             appsrc = media.get_element().get_child_by_name("source")
             frame_count = 0
 
-            retry_count = 0
             MAX_RETRIES = 5
 
             def push_frame(_appsrc, _):
                 nonlocal frame_count, cap
 
-                MAX_RETRIES = 5
                 retry_counter = 0
-                h, w = 720, 1280  # fallback resolution
 
                 while True:
                     ret, frame = cap.read()
                     if ret and frame is not None:
                         break
-
                     log.warning("[Overlay] Failed to grab frame from camera, retrying...")
                     retry_counter += 1
-                    time.sleep(0.3)
+                    time.sleep(0.03)
 
                     if retry_counter >= MAX_RETRIES:
                         log.error("[Overlay] Too many frame failures — reopening stream.")
                         cap.release()
                         time.sleep(0.5)
-                        cap = cv2.VideoCapture(rtsp_input_url)
+                        cap.open(rtsp_input_url)
                         retry_counter = 0
 
                 h, w = frame.shape[:2]
 
-                # === Read crosshair coords ===
-                x1, y1 = w // 2, h // 2
-                if os.path.exists(coords_path):
-                    try:
-                        with open(coords_path, "r") as f:
-                            coords = json.load(f)
-                            x1 = int(coords.get("x", x1))
-                            y1 = int(coords.get("y", y1))
-                    except Exception as e:
-                        log.warning(f"[Overlay] Failed to read crosshair coords: {e}")
+                x1 = overlay_data["x"] if overlay_data["x"] is not None else w // 2
+                y1 = overlay_data["y"] if overlay_data["y"] is not None else h // 2
 
-                # === Draw overlay PNG safely ===
                 if os.path.exists(overlay_path):
                     overlay = cv2.imread(overlay_path, cv2.IMREAD_UNCHANGED)
                     if overlay is not None and overlay.shape[2] == 4:
@@ -332,72 +385,22 @@ class StreamServer:
                                 )
 
                 try:
-                    gps_path    = "/tmp/overlay_coords.json"
-                    angles_path = "/tmp/overlay_angles.json"
+                    # Draw GPS coordinates
+                    gps_label = f"X: {overlay_data['gps_x']:.2f}   Y: {overlay_data['gps_y']:.2f}"
+                    cv2.putText(frame, gps_label, (30, h - 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
+                    cv2.putText(frame, gps_label, (30, h - 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
-                    # ————————————————————————————————
-                    # 1) Draw GPS X/Y at the very bottom
-                    # ————————————————————————————————
-                    if os.path.exists(gps_path):
-                        with open(gps_path, "r") as f:
-                            gps = json.load(f)
-                        # safe‐convert to floats
-                        try:
-                            gx = float(gps.get("x", 0.0))
-                            gy = float(gps.get("y", 0.0))
-                        except:
-                            gx = gy = 0.0
-                        gps_label = f"X: {gx:.2f}   Y: {gy:.2f}"
-                        # black outline
-                        cv2.putText(frame, gps_label, (30, h - 30),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
-                        # colored fill
-                        cv2.putText(frame, gps_label, (30, h - 30),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-
-                    # ————————————————————————————————
-                    # 2) Draw Az/El angles just above GPS
-                    # ————————————————————————————————
-                    if os.path.exists(angles_path):
-                        with open(angles_path, "r") as f:
-                            angles = json.load(f)
-                        az_a = angles.get("azimuth_angle", "?")
-                        el_a = angles.get("elevation_angle", "?")
-                        # try to format degrees, else fallback to “?”
-                        try:
-                            az_d = float(angles.get("azimuth_degrees", 0.0))
-                            el_d = float(angles.get("elevation_degrees", 0.0))
-                            az_d_s = f"{az_d:.2f}"
-                            el_d_s = f"{el_d:.2f}"
-                        except:
-                            az_d_s = el_d_s = "?"
-                        angle_label = f"Az: {az_a} ({az_d_s}°)   El: {el_a} ({el_d_s}°)"
-                        # black outline
-                        cv2.putText(frame, angle_label, (30, h - 70),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
-                        # colored fill
-                        cv2.putText(frame, angle_label, (30, h - 70),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
+                    # Draw angle data
+                    angle_label = f"Az: {overlay_data['az_a']} ({overlay_data['az_d_s']}°)   El: {overlay_data['el_a']} ({overlay_data['el_d_s']}°)"
+                    cv2.putText(frame, angle_label, (30, h - 70),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
+                    cv2.putText(frame, angle_label, (30, h - 70),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 except Exception as e:
-                    log.warning(f"[Overlay] Failed to draw GPS or angles: {e}")
-                    try:
-                        with open(gps_path, "r") as f:
-                            gps = json.load(f)
-                            gps_x = gps.get("x")
-                            gps_y = gps.get("y")
-                            gps_x_str = f"{float(gps_x):.2f}" if gps_x else "?"
-                            gps_y_str = f"{float(gps_y):.2f}" if gps_y else "?"
-                            label = f"X: {gps_x_str}   Y: {gps_y_str}"
+                    log.warning(f"[Overlay] Failed to draw dynamic overlays: {e}")
 
-                            cv2.putText(frame, label, (30, h - 30),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
-                            cv2.putText(frame, label, (30, h - 30),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-                    except Exception as e:
-                            log.warning(f"[Overlay] Failed to read GPS coords: {e}")
-
-                # === Push to GStreamer ===
                 try:
                     data = frame.tobytes()
                     buf = Gst.Buffer.new_allocate(None, len(data), None)
@@ -415,6 +418,7 @@ class StreamServer:
 
         factory.connect("media-configure", on_configure)
         self.mounts.add_factory(f"/{mount_name}", factory)
+
 
     def _restart_pipeline(self):
         log.warning("[GStreamer] Restarting RTSP stream pipeline due to failure.")
@@ -728,11 +732,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/stream")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.21:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:3333/stream")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.31:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.21:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.31:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
