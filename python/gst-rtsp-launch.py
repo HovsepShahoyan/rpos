@@ -99,7 +99,7 @@ class StreamServer:
         GObject.threads_init()
         log.info("StreamServer initialized")
         
-        self.codec_options = {0:"h264", 1:"MJPEG"}
+        self.codec_options = "h264"
         self.codec = codec
         
         # Declaring stream settings and initialize with safe default values
@@ -257,18 +257,18 @@ class StreamServer:
             f'caps=video/x-raw,format=BGR,width={width},height={height},framerate={fps}/1 '
             f'! queue max-size-buffers=20 leaky=downstream '
             f'! videoconvert n-threads=4 '
-            f'! video/x-raw,format=NV12,width={width},height={height},framerate={fps}/1 '
+            f'! video/x-raw,format=I420,width={width},height={height},framerate={fps}/1 '
             f'! nvvidconv '
-            f'! video/x-raw(memory:NVMM),format=NV12,width={width},height={height},framerate={fps}/1 '
+            f'! video/x-raw(memory:NVMM),format=I420,width={width},height={height},framerate={fps}/1 '
             f'! nvv4l2h264enc '
             f'insert-sps-pps=true '
             f'idrinterval=15 '
             f'maxperf-enable=1 '
-            f'bitrate=8000000 '  # High bitrate for quality
-            f'preset-level=1 '    # Balanced preset for performance
-            f'profile=high '      # High profile for better quality
-            f'tune=high-complexity '
-            f'rc-mode=vbr '
+            f'bitrate=8000000 '  # **Increased Bitrate for Better Quality**
+            f'preset-level=0 '    # ** Lowest preset for Highest Quality (more CPU intensive)**
+            f'profile=high '      # **High Profile for Better Quality**
+            f'tune=high-quality '  # **Tuned for High Quality**
+            f'rc-mode=cbr '        # **Constant Bit Rate Mode**
             f'! h264parse '
             f'! rtph264pay config-interval=1 name=pay0 pt=96'
         )
@@ -732,11 +732,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:3333/stream")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.31:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/stream")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.21:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.31:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.21:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
