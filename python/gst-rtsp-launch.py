@@ -280,6 +280,7 @@ class StreamServer:
         coords_path = f"/tmp/overlay_coords1.json" if mount_name == "stream" else f"/tmp/overlay_coords2.json"
         gps_path = "/tmp/overlay_coords.json"
         angles_path = "/tmp/overlay_angles.json"
+        hyusis_path = "/tmp/overlay_hyusis.json"
 
         overlay_data = {
             "x": None,
@@ -289,7 +290,10 @@ class StreamServer:
             "az_a": "0.00",
             "el_a": "0.00",
             "az_d_s": "0.00",
-            "el_d_s": "0.00"
+            "el_d_s": "0.00",
+            "delta_x": 0,
+            "delta_y": 0,
+            "flag": 0
         }
 
         def file_watcher():
@@ -326,6 +330,16 @@ class StreamServer:
                             overlay_data["el_d_s"] = f"{float(angles.get('elevation_degrees', 0.0)):.2f}"
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to read angle data: {e}")
+
+                try:
+                    if os.path.exists(hyusis_path):
+                        with open(hyusis_path, "r") as f:
+                            hyusis_data = json.load(f)
+                            overlay_data["delta_x"] = hyusis_data.get("DeltaX", 0)
+                            overlay_data["delta_y"] = hyusis_data.get("DeltaY", 0)
+                            overlay_data["flag"] = hyusis_data.get("Flag", 0)
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read Hyusis data: {e}")
 
                 time.sleep(1.0)
 
@@ -384,22 +398,48 @@ class StreamServer:
                                     (1 - alpha) * frame[y1c:y2, x1c:x2, c]
                                 )
 
+                # Inside push_frame function, replace the Hyusis overlay drawing block with this:
+
                 try:
                     # Draw GPS coordinates
                     gps_label = f"X: {overlay_data['gps_x']:.2f}   Y: {overlay_data['gps_y']:.2f}"
                     cv2.putText(frame, gps_label, (30, h - 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
                     cv2.putText(frame, gps_label, (30, h - 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
                     # Draw angle data
                     angle_label = f"Az: {overlay_data['az_a']} ({overlay_data['az_d_s']}°)   El: {overlay_data['el_a']} ({overlay_data['el_d_s']}°)"
                     cv2.putText(frame, angle_label, (30, h - 70),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
                     cv2.putText(frame, angle_label, (30, h - 70),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+                                    # Draw Hyusis overlay data if flag is set
+                    if overlay_data["flag"] == 1:
+                        delta_x = overlay_data["delta_x"]
+                        delta_y = overlay_data["delta_y"]
+                        # Overlay position near bottom right corner with margin
+                        margin_x = 200
+                        margin_y = 150
+                        # Rectangle top-left coordinate near bottom right with margin
+                        top_left = (w - margin_x, h - margin_y)
+                        bottom_right = (w - margin_x, h - margin_y)
+                        # Prepare formatted text for DeltaX and DeltaY
+                        text_dx = f"X: {delta_x}"
+                        text_dy = f"Y: {delta_y}"
+                        font = cv2.FONT_HERSHEY_SIMPLEX
+                        font_scale = 1.0
+                        font_thickness = 2
+                        text_color = (0, 0, 255)  # red
+                        # Calculate text positions - above and below rectangle
+                        text_dx_pos = (top_left[0], top_left[1] - 15)
+                        text_dy_pos = (top_left[0], bottom_right[1] + 60)
+                        # Put texts on frame
+                        cv2.putText(frame, text_dx, text_dx_pos, font, font_scale, text_color, font_thickness, cv2.LINE_AA)
+                        cv2.putText(frame, text_dy, text_dy_pos, font, font_scale, text_color, font_thickness, cv2.LINE_AA)
                 except Exception as e:
-                    log.warning(f"[Overlay] Failed to draw dynamic overlays: {e}")
+                    log.warning(f"[Overlay] Failed to draw Hyusis overlay: {e}")
 
                 try:
                     data = frame.tobytes()
@@ -418,6 +458,7 @@ class StreamServer:
 
         factory.connect("media-configure", on_configure)
         self.mounts.add_factory(f"/{mount_name}", factory)
+
 
 
     def _restart_pipeline(self):
