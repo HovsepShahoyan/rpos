@@ -1,7 +1,7 @@
 {
 "UserControls":
 {
-"brightness":53,
+"brightness":20,
 "contrast":44,
 "palette":0,
 "far_focus":false,
@@ -17,7 +17,7 @@
 "ptz_down":false,
 "ptz_right":false,
 "ptz_left":false,
-"ptz_middle":false,
+"ptz_middle":true,
 "acc_az":171,
 "min_fr_az":1,
 "max_fr_az":1,

@@ -218,6 +218,10 @@ class StreamServer:
     def _create_factory(self, launch_str):
         factory = GstRtspServer.RTSPMediaFactory()
         factory.set_launch(launch_str)
+        factory.set_latency(0)                # no internal buffer
+        factory.set_sync(False)
+        factory.set_block(False)
+        factory.set_drop(True)
         factory.set_shared(True)
 
         def on_media_configure(factory, media):
@@ -243,45 +247,53 @@ class StreamServer:
         import time
         from gi.repository import Gst, GstRtspServer
 
-        cap = cv2.VideoCapture(rtsp_input_url)
-        if not cap.isOpened():
-            raise Exception(f"[ERROR] Cannot open RTSP stream: {rtsp_input_url}")
+        log.debug(f"[DEBUG] Starting OpenCV overlay stream for mount: {mount_name}")
+        log.debug(f"[DEBUG] RTSP input URL: {rtsp_input_url}")
+        log.debug(f"[DEBUG] Overlay path: {overlay_path}")
 
+        # Initialize video capture
+        cap = cv2.VideoCapture(rtsp_input_url)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 0)
+        
+        if not cap.isOpened():
+            log.error(f"[ERROR] Cannot open RTSP stream: {rtsp_input_url}")
+            raise Exception(f"[ERROR] Cannot open RTSP stream: {rtsp_input_url}")
+        log.debug(f"[DEBUG] Successfully opened RTSP stream: {rtsp_input_url}")
+
+        # Get video properties
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30  # Target FPS
+        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25  # Target FPS
+        log.debug(f"[DEBUG] Camera resolution: {width}x{height}, FPS: {fps}")
 
-        # Optimized GStreamer pipeline with hardware acceleration
         pipeline_str = (
-            f'appsrc name=source is-live=true block=true format=GST_FORMAT_TIME do-timestamp=true '
-            f'caps=video/x-raw,format=BGR,width={width},height={height},framerate={fps}/1 '
-            f'! queue max-size-buffers=20 leaky=downstream '
-            f'! videoconvert n-threads=4 '
-            f'! video/x-raw,format=I420,width={width},height={height},framerate={fps}/1 '
-            f'! nvvidconv '
-            f'! video/x-raw(memory:NVMM),format=I420,width={width},height={height},framerate={fps}/1 '
-            f'! nvv4l2h264enc '
-            f'insert-sps-pps=true '
-            f'idrinterval=15 '
-            f'maxperf-enable=1 '
-            f'bitrate=8000000 '  # **Increased Bitrate for Better Quality**
-            f'preset-level=0 '    # ** Lowest preset for Highest Quality (more CPU intensive)**
-            f'profile=high '      # **High Profile for Better Quality**
-            f'tune=high-quality '  # **Tuned for High Quality**
-            f'rc-mode=cbr '        # **Constant Bit Rate Mode**
-            f'! h264parse '
-            f'! rtph264pay config-interval=1 name=pay0 pt=96'
-        )
+                    f"appsrc name=source latency=0 is-live=true format=time do-timestamp=true "
+                    f"! video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
+                    f"! queue max-size-buffers=1 leaky=downstream "
+                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,framerate={fps}/1 "
+                    f"! nvv4l2h264enc maxperf-enable=1 preset-level=1  num-B-Frames=0 "
+                    f"iframeinterval=30 bitrate=2048000 "
+                    f"! h264parse "
+                    f"! rtph264pay name=pay0 pt=96 config-interval=0"
+                ) 
 
+
+        log.debug(f"[DEBUG] GStreamer pipeline: {pipeline_str}")
+
+        # Create and configure the media factory
         factory = GstRtspServer.RTSPMediaFactory()
         factory.set_launch(pipeline_str)
         factory.set_shared(True)
+        log.debug(f"[DEBUG] Successfully created and configured GStreamer media factory")
 
+        # Define paths for overlay data
         coords_path = f"/tmp/overlay_coords1.json" if mount_name == "stream" else f"/tmp/overlay_coords2.json"
         gps_path = "/tmp/overlay_coords.json"
         angles_path = "/tmp/overlay_angles.json"
         hyusis_path = "/tmp/overlay_hyusis.json"
+        log.debug(f"[DEBUG] Overlay data paths: {coords_path}, {gps_path}, {angles_path}, {hyusis_path}")
 
+        # Initialize overlay data
         overlay_data = {
             "x": None,
             "y": None,
@@ -295,7 +307,16 @@ class StreamServer:
             "delta_y": 0,
             "flag": 0
         }
+        log.debug(f"[DEBUG] Initialized overlay data: {overlay_data}")
 
+        # Preload overlay image
+        overlay = None
+        if os.path.exists(overlay_path):
+            overlay = cv2.imread(overlay_path, cv2.IMREAD_UNCHANGED)
+            if overlay is not None and overlay.shape[2] == 4:
+                log.debug(f"[DEBUG] Successfully preloaded overlay image: {overlay_path}")
+
+        # File watcher thread
         def file_watcher():
             while True:
                 try:
@@ -341,125 +362,143 @@ class StreamServer:
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to read Hyusis data: {e}")
 
-                time.sleep(1.0)
+                time.sleep(0.1)  # Increased frequency for faster updates
 
         watcher_thread = threading.Thread(target=file_watcher, daemon=True)
         watcher_thread.start()
 
+        # Media configuration callback
         def on_configure(factory, media):
             appsrc = media.get_element().get_child_by_name("source")
             frame_count = 0
-
-            MAX_RETRIES = 5
+            processing_times = []
+            last_push_time = time.time()
 
             def push_frame(_appsrc, _):
-                nonlocal frame_count, cap
+                nonlocal frame_count, last_push_time
+                start_time = time.time()
 
+                # Grab frame with retry logic
                 retry_counter = 0
-
-                while True:
+                while retry_counter < 5:
                     ret, frame = cap.read()
                     if ret and frame is not None:
                         break
-                    log.warning("[Overlay] Failed to grab frame from camera, retrying...")
                     retry_counter += 1
-                    time.sleep(0.03)
+                    time.sleep(0.01)
 
-                    if retry_counter >= MAX_RETRIES:
-                        log.error("[Overlay] Too many frame failures — reopening stream.")
-                        cap.release()
-                        time.sleep(0.5)
-                        cap.open(rtsp_input_url)
-                        retry_counter = 0
+                if not ret or frame is None:
+                    log.error("[Overlay] Failed to grab frame after retries")
+                    return
 
+                # Calculate processing time
+                processing_time = time.time() - start_time
+                processing_times.append(processing_time)
+
+                # Calculate FPS
+                if len(processing_times) > 10:
+                    avg_pt = sum(processing_times) / len(processing_times)
+                    fps_estimate = 1 / avg_pt
+                    log.info(f"[INFO] Estimated FPS: {fps_estimate:.2f}")
+                    processing_times.pop(0)
+
+                # Apply overlay if available
+                if overlay is not None:
+                    h, w = frame.shape[:2]
+                    x1 = overlay_data["x"] if overlay_data["x"] is not None else w // 2
+                    y1 = overlay_data["y"] if overlay_data["y"] is not None else h // 2
+
+                    oh, ow = overlay.shape[:2]
+                    x1c = max(0, x1 - ow // 2)
+                    y1c = max(0, y1 - oh // 2)
+                    x2 = min(w, x1c + ow)
+                    y2 = min(h, y1c + oh)
+
+                    if x2 > x1c and y2 > y1c:
+                        crop = overlay[0:(y2 - y1c), 0:(x2 - x1c)]
+                        alpha = crop[:, :, 3] / 255.0
+                        for c in range(3):
+                            frame[y1c:y2, x1c:x2, c] = (
+                                alpha * crop[:, :, c] +
+                                (1 - alpha) * frame[y1c:y2, x1c:x2, c]
+                            )
+
+                # Draw text overlays
                 h, w = frame.shape[:2]
+                gps_label = f"X: {overlay_data['gps_x']:.2f}   Y: {overlay_data['gps_y']:.2f}"
+                cv2.putText(frame, gps_label, (30, h - 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
+                cv2.putText(frame, gps_label, (30, h - 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
-                x1 = overlay_data["x"] if overlay_data["x"] is not None else w // 2
-                y1 = overlay_data["y"] if overlay_data["y"] is not None else h // 2
+                angle_label = f"Az: {overlay_data['az_a']} ({overlay_data['az_d_s']}°)   El: {overlay_data['el_a']} ({overlay_data['el_d_s']}°)"
+                cv2.putText(frame, angle_label, (30, h - 70),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
+                cv2.putText(frame, angle_label, (30, h - 70),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-                if os.path.exists(overlay_path):
-                    overlay = cv2.imread(overlay_path, cv2.IMREAD_UNCHANGED)
-                    if overlay is not None and overlay.shape[2] == 4:
-                        oh, ow = overlay.shape[:2]
-                        x1 = min(x1, w - 1)
-                        y1 = min(y1, h - 1)
+                if overlay_data["flag"] == 1:
+                    delta_x = overlay_data["delta_x"]
+                    delta_y = overlay_data["delta_y"]
+                    margin_x = 200
+                    margin_y = 150
+                    top_left = (w - margin_x, h - margin_y)
+                    text_dx = f"X: {delta_x}"
+                    text_dy = f"Y: {delta_y}"
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    font_scale = 1.0
+                    font_thickness = 2
+                    text_color = (0, 0, 255)
+                    text_dx_pos = (top_left[0], top_left[1] - 15)
+                    text_dy_pos = (top_left[0], top_left[1] + 15)
+                    cv2.putText(frame, text_dx, text_dx_pos, font, font_scale, text_color, font_thickness, cv2.LINE_AA)
+                    cv2.putText(frame, text_dy, text_dy_pos, font, font_scale, text_color, font_thickness, cv2.LINE_AA)
 
-                        x1c = max(0, x1 - ow // 2)
-                        y1c = max(0, y1 - oh // 2)
-                        x2 = min(w, x1c + ow)
-                        y2 = min(h, y1c + oh)
+                # Convert frame to GStreamer buffer
+                data = frame.tobytes()
+                # Allocate and fill
+                #buf = Gst.Buffer.new_allocate(None, len(data), None)
+                #buf.fill(0, data)
 
-                        if x2 > x1c and y2 > y1c:
-                            crop_overlay = overlay[0:(y2 - y1c), 0:(x2 - x1c)]
-                            alpha = crop_overlay[:, :, 3] / 255.0
-                            for c in range(3):
-                                frame[y1c:y2, x1c:x2, c] = (
-                                    alpha * crop_overlay[:, :, c] +
-                                    (1 - alpha) * frame[y1c:y2, x1c:x2, c]
-                                )
+                # ---- Insert timestamp & duration here ----
+                # Calculate proper PTS and duration
+               # pts = frame_count * (Gst.SECOND // fps)
+              #  buf.pts = pts
+             #   buf.duration = Gst.SECOND // fps
+                # (Optionally also set dts if needed)
+                # buf.dts = pts
 
-                # Inside push_frame function, replace the Hyusis overlay drawing block with this:
+                # Increment frame counter after assigning timestamps
+               # frame_count += 1
+                # -----------------------------------------
 
-                try:
-                    # Draw GPS coordinates
-                    gps_label = f"X: {overlay_data['gps_x']:.2f}   Y: {overlay_data['gps_y']:.2f}"
-                    cv2.putText(frame, gps_label, (30, h - 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
-                    cv2.putText(frame, gps_label, (30, h - 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+                # Push it downstream
+             #  _appsrc.emit("push-buffer", buf)
+         #       appsrc.set_property("block", False)
+          #      appsrc.set_property("format", Gst.Format.TIME)
 
-                    # Draw angle data
-                    angle_label = f"Az: {overlay_data['az_a']} ({overlay_data['az_d_s']}°)   El: {overlay_data['el_a']} ({overlay_data['el_d_s']}°)"
-                    cv2.putText(frame, angle_label, (30, h - 70),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
-                    cv2.putText(frame, angle_label, (30, h - 70),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                                # right after you grab `frame`:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2BGRA)
+                # now `frame` is H×W×4
 
-                                    # Draw Hyusis overlay data if flag is set
-                    if overlay_data["flag"] == 1:
-                        delta_x = overlay_data["delta_x"]
-                        delta_y = overlay_data["delta_y"]
-                        # Overlay position near bottom right corner with margin
-                        margin_x = 200
-                        margin_y = 150
-                        # Rectangle top-left coordinate near bottom right with margin
-                        top_left = (w - margin_x, h - margin_y)
-                        bottom_right = (w - margin_x, h - margin_y)
-                        # Prepare formatted text for DeltaX and DeltaY
-                        text_dx = f"X: {delta_x}"
-                        text_dy = f"Y: {delta_y}"
-                        font = cv2.FONT_HERSHEY_SIMPLEX
-                        font_scale = 1.0
-                        font_thickness = 2
-                        text_color = (0, 0, 255)  # red
-                        # Calculate text positions - above and below rectangle
-                        text_dx_pos = (top_left[0], top_left[1] - 15)
-                        text_dy_pos = (top_left[0], bottom_right[1] + 60)
-                        # Put texts on frame
-                        cv2.putText(frame, text_dx, text_dx_pos, font, font_scale, text_color, font_thickness, cv2.LINE_AA)
-                        cv2.putText(frame, text_dy, text_dy_pos, font, font_scale, text_color, font_thickness, cv2.LINE_AA)
-                except Exception as e:
-                    log.warning(f"[Overlay] Failed to draw Hyusis overlay: {e}")
+                # then in your timestamped-push block:
+                data = frame.tobytes()
+                buf = Gst.Buffer.new_allocate(None, len(data), None)
+                buf.fill(0, data)
+                # … set buf.pts, buf.duration, etc …
+                _appsrc.emit("push-buffer", buf)
 
-                try:
-                    data = frame.tobytes()
-                    buf = Gst.Buffer.new_allocate(None, len(data), None)
-                    buf.fill(0, data)
-                    duration = Gst.SECOND // fps
-                    timestamp = frame_count * duration
-                    buf.pts = buf.dts = timestamp
-                    buf.duration = duration
-                    frame_count += 1
-                    _appsrc.emit("push-buffer", buf)
-                except Exception as e:
-                    log.error(f"[Overlay] Failed to push buffer: {e}")
+                # Measure push time
+                push_time = time.time() - last_push_time
+                log.debug(f"[DEBUG] Frame {frame_count} pushed in {processing_time:.3f}s, push time: {push_time:.3f}s")
+                last_push_time = time.time()
 
             appsrc.connect("need-data", push_frame)
+            log.debug(f"[DEBUG] Successfully connected push_frame callback")
 
         factory.connect("media-configure", on_configure)
         self.mounts.add_factory(f"/{mount_name}", factory)
-
-
+        log.debug(f"[DEBUG] Successfully added factory for mount: {mount_name}")
 
     def _restart_pipeline(self):
         log.warning("[GStreamer] Restarting RTSP stream pipeline due to failure.")
@@ -773,11 +812,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/stream")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.21:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:3333/")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.31:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.21:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.31:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
