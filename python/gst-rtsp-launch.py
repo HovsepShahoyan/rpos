@@ -267,12 +267,12 @@ class StreamServer:
         log.debug(f"[DEBUG] Camera resolution: {width}x{height}, FPS: {fps}")
 
         pipeline_str = (
-                    f"appsrc name=source latency=0 is-live=true format=time do-timestamp=true "
+                    f"appsrc name=source latency=100 is-live=true format=time do-timestamp=true "
                     f"! video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
-                    f"! queue max-size-buffers=1 leaky=downstream "
+                    f"! queue max-size-buffers=10 max-size-time=100000 leaky=downstream  "
                     f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,framerate={fps}/1 "
-                    f"! nvv4l2h264enc maxperf-enable=1 preset-level=1  num-B-Frames=0 "
-                    f"iframeinterval=30 bitrate=2048000 "
+                    f"! nvv4l2h264enc control-rate=constant-bitrate maxperf-enable=1 preset-level=UltraFastPreset num-B-Frames=0 "
+                    f"iframeinterval=100 bitrate=2048000 "
                     f"! h264parse "
                     f"! rtph264pay name=pay0 pt=96 config-interval=0"
                 ) 
@@ -489,9 +489,9 @@ class StreamServer:
                 _appsrc.emit("push-buffer", buf)
 
                 # Measure push time
-                push_time = time.time() - last_push_time
-                log.debug(f"[DEBUG] Frame {frame_count} pushed in {processing_time:.3f}s, push time: {push_time:.3f}s")
-                last_push_time = time.time()
+                #push_time = time.time() - last_push_time
+               # log.debug(f"[DEBUG] Frame {frame_count} pushed in {processing_time:.3f}s, push time: {push_time:.3f}s")
+                #last_push_time = time.time()
 
             appsrc.connect("need-data", push_frame)
             log.debug(f"[DEBUG] Successfully connected push_frame callback")
@@ -812,11 +812,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:3333/")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.31:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.21:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.31:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.21:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
