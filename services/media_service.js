@@ -1,4 +1,7 @@
 "use strict";
+
+global.currentProfile = null;
+
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
         extendStatics = Object.setPrototypeOf ||
@@ -311,8 +314,10 @@ var MediaService = (function (_super) {
 
         port.GetProfile = function (args) {
             if (args.ProfileToken === "profile_token_2") {
+                global.currentProfile = "profile2";
                 return { Profile: profile2 };
             }
+            global.currentProfile = "profile";
             return { Profile: profile };
         };
         port.GetProfiles = function (args) {

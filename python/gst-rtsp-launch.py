@@ -263,16 +263,22 @@ class StreamServer:
         # Get video properties
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        if mount_name == "altstream":
+            width = 1920
+            height = 1080
+        if mount_name == "stream":
+            width = 640
+            height = 512
         fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25  # Target FPS
         log.debug(f"[DEBUG] Camera resolution: {width}x{height}, FPS: {fps}")
 
         pipeline_str = (
-                    f"appsrc name=source latency=100 is-live=true format=time do-timestamp=true "
+                    f"appsrc name=source latency=150 is-live=true format=time do-timestamp=true "
                     f"! video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
-                    f"! queue max-size-buffers=10 max-size-time=100000 leaky=downstream  "
-                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,framerate={fps}/1 "
-                    f"! nvv4l2h264enc control-rate=constant-bitrate maxperf-enable=1 preset-level=UltraFastPreset num-B-Frames=0 "
-                    f"iframeinterval=100 bitrate=2048000 "
+                    f"! queue max-size-buffers=100 max-size-time=200000 leaky=downstream  "
+                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=I420,framerate={fps}/1 "
+                    f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
+                    f"iframeinterval=100 bitrate=8192000 "
                     f"! h264parse "
                     f"! rtph264pay name=pay0 pt=96 config-interval=0"
                 ) 
@@ -375,7 +381,7 @@ class StreamServer:
             last_push_time = time.time()
 
             def push_frame(_appsrc, _):
-                nonlocal frame_count, last_push_time
+                nonlocal frame_count, last_push_time, cap
                 start_time = time.time()
 
                 # Grab frame with retry logic
@@ -385,6 +391,10 @@ class StreamServer:
                     if ret and frame is not None:
                         break
                     retry_counter += 1
+                    log.warning(f"[Overlay] Read failed (attempt {retry_counter}), reopening RTSP...")
+                    cap.release()
+                    cap = cv2.VideoCapture(rtsp_input_url)
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 10)
                     time.sleep(0.01)
 
                 if not ret or frame is None:
@@ -812,11 +822,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:3333/")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.31:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.21:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.31:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.21:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
