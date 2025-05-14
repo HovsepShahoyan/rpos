@@ -251,10 +251,11 @@ class StreamServer:
         log.debug(f"[DEBUG] RTSP input URL: {rtsp_input_url}")
         log.debug(f"[DEBUG] Overlay path: {overlay_path}")
 
-        # Initialize video capture
+        # Initialize video capture with improved settings
         cap = cv2.VideoCapture(rtsp_input_url)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 0)
-        
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduced buffer size for lower latency
+        cap.set(cv2.CAP_PROP_FPS, 25)  # Force FPS if possible
+
         if not cap.isOpened():
             log.error(f"[ERROR] Cannot open RTSP stream: {rtsp_input_url}")
             raise Exception(f"[ERROR] Cannot open RTSP stream: {rtsp_input_url}")
@@ -272,17 +273,20 @@ class StreamServer:
         fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25  # Target FPS
         log.debug(f"[DEBUG] Camera resolution: {width}x{height}, FPS: {fps}")
 
+        # Optimized GStreamer pipeline
         pipeline_str = (
-                    f"appsrc name=source latency=150 is-live=true format=time do-timestamp=true "
-                    f"! video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
-                    f"! queue max-size-buffers=100 max-size-time=200000 leaky=downstream  "
-                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=I420,framerate={fps}/1 "
-                    f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
-                    f"iframeinterval=100 bitrate=8192000 "
-                    f"! h264parse "
-                    f"! rtph264pay name=pay0 pt=96 config-interval=0"
-                ) 
-
+            f"appsrc name=source latency=50 block=true is-live=true format=time do-timestamp=true "
+            f"! video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1, "
+            f"    stream-format=NV12, colorimetry=bt709 "
+            f"! queue max-size-buffers=1 max-size-time=100000000 leaky=downstream "
+            f"! nvvidconv ! video/x-raw(memory:NVMM),format=I420,framerate={fps}/1 "
+            f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
+            f"    profile=baseline iframeinterval=100 bitrate=8192000 "
+            f"    tune=zerolatency "
+            f"! h264parse "
+            f"! rtph264pay name=pay0 pt=96 config-interval=0 "
+            f"    mtu=1400 max-ntap=10"
+        )
 
         log.debug(f"[DEBUG] GStreamer pipeline: {pipeline_str}")
 
@@ -297,6 +301,7 @@ class StreamServer:
         gps_path = "/tmp/overlay_coords.json"
         angles_path = "/tmp/overlay_angles.json"
         hyusis_path = "/tmp/overlay_hyusis.json"
+        distance_path = "/tmp/overlay_distance.json"
         log.debug(f"[DEBUG] Overlay data paths: {coords_path}, {gps_path}, {angles_path}, {hyusis_path}")
 
         # Initialize overlay data
@@ -311,20 +316,36 @@ class StreamServer:
             "el_d_s": "0.00",
             "delta_x": 0,
             "delta_y": 0,
-            "flag": 0
+            "flag": 0,
+            "D": 0
         }
         log.debug(f"[DEBUG] Initialized overlay data: {overlay_data}")
 
-        # Preload overlay image
+        # Preload overlay image with size adjustment for "stream"
         overlay = None
         if os.path.exists(overlay_path):
             overlay = cv2.imread(overlay_path, cv2.IMREAD_UNCHANGED)
             if overlay is not None and overlay.shape[2] == 4:
                 log.debug(f"[DEBUG] Successfully preloaded overlay image: {overlay_path}")
 
-        # File watcher thread
+        # File watcher thread with improved timing
         def file_watcher():
+            nonlocal overlay
+            last_overlay_mtime = 0
             while True:
+                try:
+                    # Check if the overlay file has been modified
+                    if os.path.exists(overlay_path):
+                        current_mtime = os.path.getmtime(overlay_path)
+                        if current_mtime != last_overlay_mtime:
+                            last_overlay_mtime = current_mtime
+                            # Reload the overlay image
+                            overlay = cv2.imread(overlay_path, cv2.IMREAD_UNCHANGED)
+                            log.debug(f"[DEBUG] Reloaded overlay image: {overlay_path}")
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to reload overlay image: {e}")
+
+                # Check other files...
                 try:
                     if os.path.exists(coords_path):
                         with open(coords_path, "r") as f:
@@ -359,6 +380,14 @@ class StreamServer:
                     log.warning(f"[Overlay Watcher] Failed to read angle data: {e}")
 
                 try:
+                    if os.path.exists(distance_path):
+                        with open(distance_path, "r") as f:
+                            distance = json.load(f)
+                            overlay_data["D"] = str(distance.get("D", "0"))
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read distance data: {e}")
+
+                try:
                     if os.path.exists(hyusis_path):
                         with open(hyusis_path, "r") as f:
                             hyusis_data = json.load(f)
@@ -368,25 +397,26 @@ class StreamServer:
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to read Hyusis data: {e}")
 
-                time.sleep(0.1)  # Increased frequency for faster updates
+                time.sleep(0.05)  # Adjusted for better performance
 
         watcher_thread = threading.Thread(target=file_watcher, daemon=True)
         watcher_thread.start()
 
-        # Media configuration callback
+        # Media configuration callback with optimizations
         def on_configure(factory, media):
             appsrc = media.get_element().get_child_by_name("source")
             frame_count = 0
             processing_times = []
             last_push_time = time.time()
+            lock = threading.Lock()
 
             def push_frame(_appsrc, _):
-                nonlocal frame_count, last_push_time, cap
+                nonlocal frame_count, last_push_time, cap, overlay
                 start_time = time.time()
 
-                # Grab frame with retry logic
+                # Grab frame with improved retry logic
                 retry_counter = 0
-                while retry_counter < 5:
+                while retry_counter < 3:  # Reduced retries for lower latency
                     ret, frame = cap.read()
                     if ret and frame is not None:
                         break
@@ -394,8 +424,8 @@ class StreamServer:
                     log.warning(f"[Overlay] Read failed (attempt {retry_counter}), reopening RTSP...")
                     cap.release()
                     cap = cv2.VideoCapture(rtsp_input_url)
-                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 10)
-                    time.sleep(0.01)
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    time.sleep(0.001)
 
                 if not ret or frame is None:
                     log.error("[Overlay] Failed to grab frame after retries")
@@ -409,7 +439,7 @@ class StreamServer:
                 if len(processing_times) > 10:
                     avg_pt = sum(processing_times) / len(processing_times)
                     fps_estimate = 1 / avg_pt
-                    #log.info(f"[INFO] Estimated FPS: {fps_estimate:.2f}")
+                   # log.info(f"[INFO] Estimated FPS: {fps_estimate:.2f}")
                     processing_times.pop(0)
 
                 # Apply overlay if available
@@ -433,75 +463,108 @@ class StreamServer:
                                 (1 - alpha) * frame[y1c:y2, x1c:x2, c]
                             )
 
-                # Draw text overlays
+                # Draw text overlays with improved efficiency
+
                 h, w = frame.shape[:2]
-                gps_label = f"X: {overlay_data['gps_x']:.2f}   Y: {overlay_data['gps_y']:.2f}"
-                cv2.putText(frame, gps_label, (30, h - 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
-                cv2.putText(frame, gps_label, (30, h - 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
-                angle_label = f"Az: {overlay_data['az_a']} ({overlay_data['az_d_s']}°)   El: {overlay_data['el_a']} ({overlay_data['el_d_s']}°)"
-                cv2.putText(frame, angle_label, (30, h - 70),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
-                cv2.putText(frame, angle_label, (30, h - 70),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                # 1. Camera Coordinates (X and Y) - Yellow, Top-Right
+                camera_coords_label = "Camera Coordinates"
+                if mount_name == "stream":
+                    cv2.putText(frame, camera_coords_label, (w - 150, h - 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+                    cv2.putText(frame, camera_coords_label, (w - 150, h - 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
+                    coords_label = f"X: {overlay_data['gps_x']}, Y: {overlay_data['gps_y']}"
+                    cv2.putText(frame, coords_label, (w - 150, h - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+                    cv2.putText(frame, coords_label, (w - 150, h - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
+                else:
+                    cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
+                    cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
+                    coords_label = f"X: {overlay_data['gps_x']}, Y: {overlay_data['gps_y']}"
+                    cv2.putText(frame, coords_label, (w - 550, h - 20),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
+                    cv2.putText(frame, coords_label, (w - 550, h - 20),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
 
-                if overlay_data["flag"] == 1:
-                    delta_x = overlay_data["delta_x"]
-                    delta_y = overlay_data["delta_y"]
-                    margin_x = 200
-                    margin_y = 150
-                    top_left = (w - margin_x, h - margin_y)
-                    text_dx = f"X: {delta_x}"
-                    text_dy = f"Y: {delta_y}"
-                    font = cv2.FONT_HERSHEY_SIMPLEX
-                    font_scale = 1.0
-                    font_thickness = 2
-                    text_color = (0, 0, 255)
-                    text_dx_pos = (top_left[0], top_left[1] - 15)
-                    text_dy_pos = (top_left[0], top_left[1] + 15)
-                    cv2.putText(frame, text_dx, text_dx_pos, font, font_scale, text_color, font_thickness, cv2.LINE_AA)
-                    cv2.putText(frame, text_dy, text_dy_pos, font, font_scale, text_color, font_thickness, cv2.LINE_AA)
+                # 2. Target Label - Red, Top-Left
+                target_label = "Target"
+                if mount_name == "stream":
+                    cv2.putText(frame, target_label, (10, 20),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+                    cv2.putText(frame, target_label, (10, 20),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                else:
+                    cv2.putText(frame, target_label, (30, 50),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
+                    cv2.putText(frame, target_label, (30, 50),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
 
-                # Convert frame to GStreamer buffer
-                data = frame.tobytes()
-                # Allocate and fill
-                #buf = Gst.Buffer.new_allocate(None, len(data), None)
-                #buf.fill(0, data)
+                # 3. Delta X - Blue, Below Target
+                delta_x_label = f"X: {overlay_data['delta_x']}"
+                if mount_name == "stream":
+                    cv2.putText(frame, delta_x_label, (10, 40),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+                    cv2.putText(frame, delta_x_label, (10, 40),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                else:
+                    cv2.putText(frame, delta_x_label, (30, 100),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
+                    cv2.putText(frame, delta_x_label, (30, 100),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
 
-                # ---- Insert timestamp & duration here ----
-                # Calculate proper PTS and duration
-               # pts = frame_count * (Gst.SECOND // fps)
-              #  buf.pts = pts
-             #   buf.duration = Gst.SECOND // fps
-                # (Optionally also set dts if needed)
-                # buf.dts = pts
+                # 4. Delta Y - Blue, Below Delta X
+                delta_y_label = f"Y: {overlay_data['delta_y']}"
+                if mount_name == "stream":
+                    cv2.putText(frame, delta_y_label, (10, 60),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+                    cv2.putText(frame, delta_y_label, (10, 60),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                else:
+                    cv2.putText(frame, delta_y_label, (30, 150),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
+                    cv2.putText(frame, delta_y_label, (30, 150),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
 
-                # Increment frame counter after assigning timestamps
-               # frame_count += 1
-                # -----------------------------------------
+                # 5. Distance - Blue, Top-Left
+                distance_label = f"Distance: {overlay_data['D']}"
+                if mount_name == "stream":
+                    cv2.putText(frame, distance_label, (10, 80),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+                    cv2.putText(frame, distance_label, (10, 80),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+                else:
+                    cv2.putText(frame, distance_label, (30, 200),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
+                    cv2.putText(frame, distance_label, (30, 200),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
 
-                # Push it downstream
-             #  _appsrc.emit("push-buffer", buf)
-         #       appsrc.set_property("block", False)
-          #      appsrc.set_property("format", Gst.Format.TIME)
+                # 6. Azimuth and Elevation (Az and El) - Green, Top-Middle
+                angle_label = f"AngleD: {overlay_data['az_a']} ({overlay_data['az_d_s']}°)   MestoC: {overlay_data['el_a']} ({overlay_data['el_d_s']}°)"
+                if mount_name == "stream":
+                    cv2.putText(frame, angle_label, (w//2 - 50, 20),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+                    cv2.putText(frame, angle_label, (w//2 - 50, 20),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+                else:
+                    cv2.putText(frame, angle_label, (w//2 - 200, 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
+                    cv2.putText(frame, angle_label, (w//2 - 200, 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
-                                # right after you grab `frame`:
+                # Convert frame to GStreamer buffer with improved handling
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2BGRA)
-                # now `frame` is H×W×4
-
-                # then in your timestamped-push block:
                 data = frame.tobytes()
                 buf = Gst.Buffer.new_allocate(None, len(data), None)
                 buf.fill(0, data)
-                # … set buf.pts, buf.duration, etc …
+
+                # Push it downstream
                 _appsrc.emit("push-buffer", buf)
 
-                # Measure push time
-                #push_time = time.time() - last_push_time
-               # log.debug(f"[DEBUG] Frame {frame_count} pushed in {processing_time:.3f}s, push time: {push_time:.3f}s")
-                #last_push_time = time.time()
+                frame_count += 1
 
             appsrc.connect("need-data", push_frame)
             log.debug(f"[DEBUG] Successfully connected push_frame callback")
@@ -509,6 +572,7 @@ class StreamServer:
         factory.connect("media-configure", on_configure)
         self.mounts.add_factory(f"/{mount_name}", factory)
         log.debug(f"[DEBUG] Successfully added factory for mount: {mount_name}")
+
 
     def _restart_pipeline(self):
         log.warning("[GStreamer] Restarting RTSP stream pipeline due to failure.")
