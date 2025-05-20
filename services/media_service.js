@@ -197,7 +197,7 @@ var MediaService = (function (_super) {
                 token: "video_src_token"
             },
             Framerate: 25,
-            Resolution: { Width: 1920, Height: 1280 }
+            Resolution: { Width: 640, Height: 512 }
         };
         var videoSourceConfiguration = {
             Name: "Primary Source",
@@ -206,7 +206,7 @@ var MediaService = (function (_super) {
                 token: "video_src_config_token"
             },
             SourceToken: "video_src_token",
-            Bounds: { attributes: { x: 0, y: 0, width: 1920, height: 1080 } }
+            Bounds: { attributes: { x: 0, y: 0, width: 640, height: 512 } }
         };
         var videoSource2 = {
             attributes: {
@@ -299,8 +299,10 @@ var MediaService = (function (_super) {
         
             var streamName = _this.config.RTSPName;
             if (args.ProfileToken === "profile_token_2") {
+                console.log("profile_token_2")
                 streamName = _this.config.RTSPAltName;
             }
+            else {console.log("profile_token_1")}
     
             return {
                 MediaUri: {

@@ -267,25 +267,27 @@ class StreamServer:
         if mount_name == "altstream":
             width = 1920
             height = 1080
-        if mount_name == "stream":
+        elif mount_name == "stream":
             width = 640
             height = 512
+
         fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25  # Target FPS
+
         log.debug(f"[DEBUG] Camera resolution: {width}x{height}, FPS: {fps}")
 
         # Optimized GStreamer pipeline
+
         pipeline_str = (
-            f"appsrc name=source latency=50 block=true is-live=true format=time do-timestamp=true "
-            f"! video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1, "
-            f"    stream-format=NV12, colorimetry=bt709 "
-            f"! queue max-size-buffers=1 max-size-time=100000000 leaky=downstream "
-            f"! nvvidconv ! video/x-raw(memory:NVMM),format=I420,framerate={fps}/1 "
+            f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
+            f"latency=0 sync=false "
+            f"! video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
+            f"! queue max-size-buffers=1 max-size-time=0 leaky=downstream "
+            f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,framerate={fps}/1 "
             f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
-            f"    profile=baseline iframeinterval=100 bitrate=8192000 "
-            f"    tune=zerolatency "
+            f"profile=baseline iframeinterval=150 bitrate=8192000 tune=zerolatency "
+            f"insert-sps-pps=1 "
             f"! h264parse "
-            f"! rtph264pay name=pay0 pt=96 config-interval=0 "
-            f"    mtu=1400 max-ntap=10"
+            f"! rtph264pay name=pay0 pt=96 config-interval=0 mtu=1400"
         )
 
         log.debug(f"[DEBUG] GStreamer pipeline: {pipeline_str}")
@@ -332,6 +334,7 @@ class StreamServer:
         def file_watcher():
             nonlocal overlay
             last_overlay_mtime = 0
+            last_coords_mtime = 0
             while True:
                 try:
                     # Check if the overlay file has been modified
@@ -345,20 +348,25 @@ class StreamServer:
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to reload overlay image: {e}")
 
-                # Check other files...
+                # Check crosshair coordinates
                 try:
                     if os.path.exists(coords_path):
-                        with open(coords_path, "r") as f:
-                            coords = json.load(f)
-                            x = coords.get("x")
-                            y = coords.get("y")
-                            if x is not None:
-                                overlay_data["x"] = int(x)
-                            if y is not None:
-                                overlay_data["y"] = int(y)
+                        current_coords_mtime = os.path.getmtime(coords_path)
+                        if current_coords_mtime != last_coords_mtime:
+                            last_coords_mtime = current_coords_mtime
+                            with open(coords_path, "r") as f:
+                                coords = json.load(f)
+                                x = coords.get("x")
+                                y = coords.get("y")
+                                if x is not None:
+                                    overlay_data["x"] = int(x)
+                                if y is not None:
+                                    overlay_data["y"] = int(y)
+                            log.debug(f"[DEBUG] Reloaded crosshair coordinates: {coords_path}")
                 except Exception as e:
-                    log.warning(f"[Overlay Watcher] Failed to read crosshair coords: {e}")
+                    log.warning(f"[Overlay Watcher] Failed to reload crosshair coordinates: {e}")
 
+                # Check other files...
                 try:
                     if os.path.exists(gps_path):
                         with open(gps_path, "r") as f:
@@ -398,6 +406,7 @@ class StreamServer:
                     log.warning(f"[Overlay Watcher] Failed to read Hyusis data: {e}")
 
                 time.sleep(0.05)  # Adjusted for better performance
+
 
         watcher_thread = threading.Thread(target=file_watcher, daemon=True)
         watcher_thread.start()
@@ -439,14 +448,40 @@ class StreamServer:
                 if len(processing_times) > 10:
                     avg_pt = sum(processing_times) / len(processing_times)
                     fps_estimate = 1 / avg_pt
-                   # log.info(f"[INFO] Estimated FPS: {fps_estimate:.2f}")
+                    # log.info(f"[INFO] Estimated FPS: {fps_estimate:.2f}")
                     processing_times.pop(0)
 
                 # Apply overlay if available
                 if overlay is not None:
                     h, w = frame.shape[:2]
-                    x1 = overlay_data["x"] if overlay_data["x"] is not None else w // 2
-                    y1 = overlay_data["y"] if overlay_data["y"] is not None else h // 2
+                    
+                    # Original resolution (based on mount_name)
+                    if mount_name == "stream":
+                        original_width = 640
+                        original_height = 512
+                    else:
+                        original_width = 1920
+                        original_height = 1080
+                    
+                    # Calculate scaling factors
+                    scale_x = w / original_width
+                    scale_y = h / original_height
+
+                    # Get crosshair coordinates from overlay_data
+                    x1 = overlay_data["x"] if overlay_data["x"] is not None else int(original_width // 2)
+                    y1 = overlay_data["y"] if overlay_data["y"] is not None else int(original_height // 2)
+
+                    # Scale coordinates to match the processed frame size
+                    if mount_name == "stream":
+                        # Scale x coordinate
+                        x1_scaled = int(x1 * (640 / 1920))
+                        # Scale y coordinate
+                        y1_scaled = int(y1 * (512 / 1080))
+                        x1, y1 = x1_scaled, y1_scaled
+                    else:
+                        x1_scaled = int(x1 * scale_x)
+                        y1_scaled = int(y1 * scale_y)
+                        x1, y1 = x1_scaled, y1_scaled
 
                     oh, ow = overlay.shape[:2]
                     x1c = max(0, x1 - ow // 2)
@@ -463,6 +498,9 @@ class StreamServer:
                                 (1 - alpha) * frame[y1c:y2, x1c:x2, c]
                             )
 
+                # ... rest of the code remains the same ...
+
+
                 # Draw text overlays with improved efficiency
 
                 h, w = frame.shape[:2]
@@ -470,14 +508,14 @@ class StreamServer:
                 # 1. Camera Coordinates (X and Y) - Yellow, Top-Right
                 camera_coords_label = "Camera Coordinates"
                 if mount_name == "stream":
-                    cv2.putText(frame, camera_coords_label, (w - 150, h - 30),
+                    cv2.putText(frame, camera_coords_label, (w - 275, h - 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                    cv2.putText(frame, camera_coords_label, (w - 150, h - 30),
+                    cv2.putText(frame, camera_coords_label, (w - 275, h - 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
                     coords_label = f"X: {overlay_data['gps_x']}, Y: {overlay_data['gps_y']}"
-                    cv2.putText(frame, coords_label, (w - 150, h - 10),
+                    cv2.putText(frame, coords_label, (w - 275, h - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                    cv2.putText(frame, coords_label, (w - 150, h - 10),
+                    cv2.putText(frame, coords_label, (w - 275, h - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
                 else:
                     cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
@@ -545,9 +583,9 @@ class StreamServer:
                 # 6. Azimuth and Elevation (Az and El) - Green, Top-Middle
                 angle_label = f"AngleD: {overlay_data['az_a']} ({overlay_data['az_d_s']}°)   MestoC: {overlay_data['el_a']} ({overlay_data['el_d_s']}°)"
                 if mount_name == "stream":
-                    cv2.putText(frame, angle_label, (w//2 - 50, 20),
+                    cv2.putText(frame, angle_label, (w//2 - 150, 20),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                    cv2.putText(frame, angle_label, (w//2 - 50, 20),
+                    cv2.putText(frame, angle_label, (w//2 - 150, 20),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
                 else:
                     cv2.putText(frame, angle_label, (w//2 - 200, 30),
@@ -565,6 +603,7 @@ class StreamServer:
                 _appsrc.emit("push-buffer", buf)
 
                 frame_count += 1
+
 
             appsrc.connect("need-data", push_frame)
             log.debug(f"[DEBUG] Successfully connected push_frame callback")
@@ -627,118 +666,10 @@ class StreamServer:
                        log.info(f"[Changed] brightness: {self.brightness} → {new_brightness}")
                        self.brightness = new_brightness
 
-                # Call the external UART brightness script
-#               try:
- #                   subprocess.run(
-  #                      ["python3", "/home/jetson/send_brightness.py", "--value", str(new_brightness)],
-   #                     check=True,
-    #                    stdout=subprocess.PIPE,
-     #                   stderr=subprocess.PIPE
-      #                  )
-       #             log.info(f"[UART] Brightness script executed for value {new_brightness}")
-        #        except subprocess.CalledProcessError as e:
-         #           log.error(f"[UART ERROR] Brightness script failed: {e.stderr.decode().strip()}")
-                # new_brightness = config["UserControls"]["brightness"]
-                # if self.check_range(new_brightness, self.brightness_range):
-                #     if new_brightness != self.brightness:
-                #         log.info(f"[Changed] brightness: {self.brightness} → {new_brightness}")
-                #         self.brightness = new_brightness
-
-                #         # Safe UART call to external script
-                #         try:
-                #             subprocess.Popen(
-                #                 ["python3", "/home/jetson/rpos/scripts/send_brightness.py", "--value", str(new_brightness)],
-                #                 stdout=subprocess.DEVNULL,
-                #                 stderr=subprocess.DEVNULL
-                #             )
-                #             log.info(f"[UART] Sent brightness {new_brightness} via external script.")
-                #         except Exception as e:
-                #             log.error(f"[UART ERROR] Failed to launch brightness script: {e}")
-
-                # new_digital_zoom = config["UserControls"]["digital_zoom"]
-                # #log.info("new_digital_zoom {new_digital_zoom}")
-                # if self.check_range(new_digital_zoom, self.digital_zoom_range):
-                #     if new_digital_zoom != self.digital_zoom:
-                #         #log.info(f"[Changed] digital_zoom: {self.digital_zoom} → {new_digital_zoom}")
-                #         self.digital_zoom = new_digital_zoom
-
-                #         # Safe UART call to external script
-                #         try:
-                #             subprocess.Popen(
-                #                 ["python3", "/home/jetson/rpos/scripts/send_zoom.py", "--level", str(new_digital_zoom)],
-                #                 stdout=subprocess.DEVNULL,
-                #                 stderr=subprocess.DEVNULL
-                #             )
-                #             #log.info(f"[UART] Sent digital_zoom {new_digital_zoom} via external script.")
-                #         except Exception as e:
-                #             #log.error(f"[UART ERROR] Failed to launch digital_zoom script: {e}")
-
-                # new_palette = config["UserControls"]["palette"]
-                # if 0 <= new_palette <= 14:
-                #     if new_palette != self.palette:
-                #         log.info(f"[Changed] palette: {self.palette} → {new_palette}")
-                #         self.palette = new_palette
-                #         try:
-                #             subprocess.Popen(
-                #                 ["python3", "/home/jetson/rpos/scripts/send_palette.py", "--value", str(new_palette)],
-                #                 stdout=subprocess.DEVNULL,
-                #                 stderr=subprocess.DEVNULL
-                #             )
-                #             #log.info(f"[UART] Sent palette {new_palette} via external script.")
-                #         except Exception as e:
-                            #log.error(f"[UART ERROR] Failed to launch palette script: {e}")
-
-                # new_ip = config["UserControls"]["ip_address"]
-                # new_username = config["UserControls"]["username"]
-                # new_password = config["UserControls"]["password"]
-                # log.info(f" {new_ip} {new_username} {new_password} ")
-
-                # if (new_ip != self.ip_address or
-                #     new_username != self.username or
-                #     new_password != self.password):
-
-                #     log.info("[Changed] IP/Username/Password has changed")
-                #     try:
-                #         subprocess.Popen(
-                #             ["bash", "/home/jetson/rpos/scripts/update_rpos_config.sh",
-                #              "--ip", new_ip,
-                #              "--user", new_username,
-                #              "--pass", new_password],
-                #              stdout=subprocess.DEVNULL,
-                #              stderr=subprocess.DEVNULL
-                #         )
-                #         log.info("[SCRIPT] Ran update_config.sh to apply IP/Login/Password changes.")
-                #     except Exception as e:
-                #         log.error(f"[SCRIPT ERROR] Failed to launch config update script: {e}")
-
-
-
                 if self.check_range(config["UserControls"]["contrast"], self.contrast_range):
                    self.contrast = config["UserControls"]["contrast"]
                 else:
                    log.error("contrast out of range: " + str(config["UserControls"]["contrast"]))
-                
-                # new_contrast = config["UserControls"]["contrast"]
-                # if self.check_range(new_contrast, self.contrast_range):
-                #     if new_contrast != self.contrast:
-                #         log.info(f"[Changed] contrast: {self.contrast} → {new_contrast}")
-                #         self.contrast = new_contrast
-                #         # Safe UART call to external contrast script
-                #         try:
-                #             subprocess.Popen(
-                #                 ["python3", "/home/jetson/rpos/scripts/send_contrast.py", "--value", str(new_contrast)],
-                #                 stdout=subprocess.DEVNULL,
-                #                 stderr=subprocess.DEVNULL
-                #             )
-                #             log.info(f"[UART] Sent contrast {new_contrast} via external script.")
-                #         except Exception as e:
-                #             log.error(f"[UART ERROR] Failed to launch contrast script: {e}")
-
-
-                # if self.check_range(config["UserControls"]["saturation"], self.saturation_range):
-                #     self.saturation = config["UserControls"]["saturation"]
-                # else:
-                #     log.error("saturation out of range: " + str(config["UserControls"]["saturation"]))
 
                 if self.check_range(config["UserControls"]["sharpness"], self.sharpness_range):
                     self.sharpness = config["UserControls"]["sharpness"]
