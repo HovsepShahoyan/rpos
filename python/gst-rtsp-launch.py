@@ -251,13 +251,25 @@ class StreamServer:
         log.debug(f"[DEBUG] RTSP input URL: {rtsp_input_url}")
         log.debug(f"[DEBUG] Overlay path: {overlay_path}")
 
-        gst_pipeline = (
-            f'rtspsrc location={rtsp_input_url} latency=0 ! '
-            f'rtph264depay ! h264parse ! nvv4l2decoder ! '
-            f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
-            f'nvvidconv ! video/x-raw, format=BGRx ! '
-            f'appsink drop=true max-buffers=3 sync=false'
-        )
+        if mount_name == "stream":
+            # Decode and convert to 1350x1080 frames at source
+            gst_pipeline = (
+                f'rtspsrc location={rtsp_input_url} latency=0 ! '
+                f'rtph264depay ! h264parse ! nvv4l2decoder ! '
+                f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
+                f'nvvidconv ! video/x-raw, format=BGRx, width=1350, height=1080 !'
+                f'appsink drop=true max-buffers=3 sync=false'
+            )
+        else:
+            # Original pipeline for other mount names
+            gst_pipeline = (
+                f'rtspsrc location={rtsp_input_url} latency=0 ! '
+                f'rtph264depay ! h264parse ! nvv4l2decoder ! '
+                f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
+                f'nvvidconv ! video/x-raw, format=BGRx ! '
+                f'appsink drop=true max-buffers=3 sync=false'
+            )
+
         cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
         #cap.set(cv2.CAP_PROP_BUFFERSIZE, 0)  # Reduced buffer size for lower latency
        # cap.set(cv2.CAP_PROP_FPS, 25)  # Force FPS if possible
@@ -274,27 +286,43 @@ class StreamServer:
             width = 1920
             height = 1080
         elif mount_name == "stream":
-            width = 640
-            height = 512
+            width = 1350
+            height = 1080
 
         fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25  # Target FPS
 
         log.debug(f"[DEBUG] Camera resolution: {width}x{height}, FPS: {fps}")
 
-        # Optimized GStreamer pipeline
-
-        pipeline_str = (
-            f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
-            f"latency=0 sync=false "
-            f"! video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
-            f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
-            f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,framerate={fps}/1 "
-            f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
-            f"profile=baseline iframeinterval=25 bitrate=4096000 tune=zerolatency "
-            f"insert-sps-pps=1 "
-            f"! h264parse "
-            f"! rtph264pay name=pay0 pt=96 config-interval=0"
-        )
+        if mount_name == "stream":
+            pipeline_str = (
+                f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
+                f"latency=0 sync=false "
+                f"! video/x-raw,format=BGRx,width=1350,height=1080,framerate={fps}/1 "
+                # Add black borders first
+                f"! videobox left=-285 right=-285 border-alpha=0 "
+                f"! video/x-raw,width=1920,height=1080 "
+                # Convert to NVMM format for hardware acceleration
+                f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
+                f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
+                f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
+                f"profile=baseline iframeinterval=25 bitrate=4096000 tune=zerolatency "
+                f"insert-sps-pps=1 "
+                f"! h264parse "
+                f"! rtph264pay name=pay0 pt=96 config-interval=0"
+            )
+        else:
+            pipeline_str = (
+                f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
+                f"latency=0 sync=false "
+                f"! video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
+                f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
+                f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,framerate={fps}/1 "
+                f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
+                f"profile=baseline iframeinterval=25 bitrate=4096000 tune=zerolatency "
+                f"insert-sps-pps=1 "
+                f"! h264parse "
+                f"! rtph264pay name=pay0 pt=96 config-interval=0"
+            )
 
         log.debug(f"[DEBUG] GStreamer pipeline: {pipeline_str}")
 
@@ -446,6 +474,8 @@ class StreamServer:
                     log.error("[Overlay] Failed to grab frame after retries")
                     return
                 
+                
+                
                 #frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
 
                 # Calculate processing time
@@ -465,8 +495,8 @@ class StreamServer:
                     
                     # Original resolution (based on mount_name)
                     if mount_name == "stream":
-                        original_width = 640
-                        original_height = 512
+                        original_width = 1920
+                        original_height = 1080
                     else:
                         original_width = 1920
                         original_height = 1080
@@ -482,9 +512,9 @@ class StreamServer:
                     # Scale coordinates to match the processed frame size
                     if mount_name == "stream":
                         # Scale x coordinate
-                        x1_scaled = int(x1 * (640 / 1920))
+                        x1_scaled = int(x1 * (1920 / 1920))
                         # Scale y coordinate
-                        y1_scaled = int(y1 * (512 / 1080))
+                        y1_scaled = int(y1 * (1080 / 1080))
                         x1, y1 = x1_scaled, y1_scaled
                     else:
                         x1_scaled = int(x1 * scale_x)
@@ -515,91 +545,50 @@ class StreamServer:
 
                 # 1. Camera Coordinates (X and Y) - Yellow, Top-Right
                 camera_coords_label = "Camera Coordinates"
-                if mount_name == "stream":
-                    cv2.putText(frame, camera_coords_label, (w - 275, h - 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                    cv2.putText(frame, camera_coords_label, (w - 275, h - 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
-                    coords_label = f"X: {overlay_data['gps_x']}, Y: {overlay_data['gps_y']}"
-                    cv2.putText(frame, coords_label, (w - 275, h - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                    cv2.putText(frame, coords_label, (w - 275, h - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
-                else:
-                    cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                    cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
-                    coords_label = f"X: {overlay_data['gps_x']}, Y: {overlay_data['gps_y']}"
-                    cv2.putText(frame, coords_label, (w - 550, h - 20),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                    cv2.putText(frame, coords_label, (w - 550, h - 20),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
+                cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
+                cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
+                coords_label = f"X: {overlay_data['gps_x']}, Y: {overlay_data['gps_y']}"
+                cv2.putText(frame, coords_label, (w - 550, h - 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
+                cv2.putText(frame, coords_label, (w - 550, h - 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
 
                 # 2. Target Label - Red, Top-Left
                 target_label = "Target"
-                if mount_name == "stream":
-                    cv2.putText(frame, target_label, (10, 20),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                    cv2.putText(frame, target_label, (10, 20),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
-                else:
-                    cv2.putText(frame, target_label, (30, 50),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                    cv2.putText(frame, target_label, (30, 50),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+                cv2.putText(frame, target_label, (30, 50),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
+                cv2.putText(frame, target_label, (30, 50),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
 
                 # 3. Delta X - Blue, Below Target
                 delta_x_label = f"X: {overlay_data['delta_x']}"
-                if mount_name == "stream":
-                    cv2.putText(frame, delta_x_label, (10, 40),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                    cv2.putText(frame, delta_x_label, (10, 40),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
-                else:
-                    cv2.putText(frame, delta_x_label, (30, 100),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                    cv2.putText(frame, delta_x_label, (30, 100),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+                cv2.putText(frame, delta_x_label, (30, 100),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
+                cv2.putText(frame, delta_x_label, (30, 100),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
 
                 # 4. Delta Y - Blue, Below Delta X
                 delta_y_label = f"Y: {overlay_data['delta_y']}"
-                if mount_name == "stream":
-                    cv2.putText(frame, delta_y_label, (10, 60),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                    cv2.putText(frame, delta_y_label, (10, 60),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
-                else:
-                    cv2.putText(frame, delta_y_label, (30, 150),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                    cv2.putText(frame, delta_y_label, (30, 150),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+                cv2.putText(frame, delta_y_label, (30, 150),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
+                cv2.putText(frame, delta_y_label, (30, 150),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
 
                 # 5. Distance - Blue, Top-Left
                 distance_label = f"Distance: {overlay_data['D']}"
-                if mount_name == "stream":
-                    cv2.putText(frame, distance_label, (10, 80),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                    cv2.putText(frame, distance_label, (10, 80),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
-                else:
-                    cv2.putText(frame, distance_label, (30, 200),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                    cv2.putText(frame, distance_label, (30, 200),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+                cv2.putText(frame, distance_label, (30, 200),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
+                cv2.putText(frame, distance_label, (30, 200),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
 
                 # 6. Azimuth and Elevation (Az and El) - Green, Top-Middle
                 angle_label = f"AngleD: {overlay_data['az_a']} ({overlay_data['az_d_s']}°)   MestoC: {overlay_data['el_a']} ({overlay_data['el_d_s']}°)"
-                if mount_name == "stream":
-                    cv2.putText(frame, angle_label, (w//2 - 150, 20),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                    cv2.putText(frame, angle_label, (w//2 - 150, 20),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
-                else:
-                    cv2.putText(frame, angle_label, (w//2 - 200, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                    cv2.putText(frame, angle_label, (w//2 - 200, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+                cv2.putText(frame, angle_label, (w//2 - 200, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
+                cv2.putText(frame, angle_label, (w//2 - 200, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
                 # Convert frame to GStreamer buffer with improved handling
                 #frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
