@@ -251,10 +251,16 @@ class StreamServer:
         log.debug(f"[DEBUG] RTSP input URL: {rtsp_input_url}")
         log.debug(f"[DEBUG] Overlay path: {overlay_path}")
 
-        # Initialize video capture with improved settings
-        cap = cv2.VideoCapture(rtsp_input_url)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduced buffer size for lower latency
-        cap.set(cv2.CAP_PROP_FPS, 25)  # Force FPS if possible
+        gst_pipeline = (
+            f'rtspsrc location={rtsp_input_url} latency=0 ! '
+            f'rtph264depay ! h264parse ! nvv4l2decoder ! '
+            f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
+            f'nvvidconv ! video/x-raw, format=BGRx ! '
+            f'appsink drop=true max-buffers=3 sync=false'
+        )
+        cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+        #cap.set(cv2.CAP_PROP_BUFFERSIZE, 0)  # Reduced buffer size for lower latency
+       # cap.set(cv2.CAP_PROP_FPS, 25)  # Force FPS if possible
 
         if not cap.isOpened():
             log.error(f"[ERROR] Cannot open RTSP stream: {rtsp_input_url}")
@@ -281,13 +287,13 @@ class StreamServer:
             f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
             f"latency=0 sync=false "
             f"! video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
-            f"! queue max-size-buffers=1 max-size-time=0 leaky=downstream "
+            f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
             f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,framerate={fps}/1 "
             f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
-            f"profile=baseline iframeinterval=150 bitrate=8192000 tune=zerolatency "
+            f"profile=baseline iframeinterval=25 bitrate=4096000 tune=zerolatency "
             f"insert-sps-pps=1 "
             f"! h264parse "
-            f"! rtph264pay name=pay0 pt=96 config-interval=0 mtu=1400"
+            f"! rtph264pay name=pay0 pt=96 config-interval=0"
         )
 
         log.debug(f"[DEBUG] GStreamer pipeline: {pipeline_str}")
@@ -432,13 +438,15 @@ class StreamServer:
                     retry_counter += 1
                     log.warning(f"[Overlay] Read failed (attempt {retry_counter}), reopening RTSP...")
                     cap.release()
-                    cap = cv2.VideoCapture(rtsp_input_url)
+                    cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     time.sleep(0.001)
 
                 if not ret or frame is None:
                     log.error("[Overlay] Failed to grab frame after retries")
                     return
+                
+                #frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
 
                 # Calculate processing time
                 processing_time = time.time() - start_time
@@ -594,7 +602,7 @@ class StreamServer:
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
                 # Convert frame to GStreamer buffer with improved handling
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2BGRA)
+                #frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
                 data = frame.tobytes()
                 buf = Gst.Buffer.new_allocate(None, len(data), None)
                 buf.fill(0, data)
@@ -808,7 +816,15 @@ class StreamServer:
             def wait_for_opencv_ready(rtsp_url, max_attempts=10):
                 import cv2, time
                 for attempt in range(max_attempts):
-                    cap = cv2.VideoCapture(rtsp_url)
+                    gst_pipeline = (
+                        f'rtspsrc location={rtsp_url} latency=50 ! '
+                        f'rtph264depay ! h264parse ! nvv4l2decoder ! '
+                        f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
+                        f'nvvidconv ! video/x-raw, format=RGBA ! '
+                        f'appsink drop=true max-buffers=1 sync=false'
+                    )
+                    cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+
                     if cap.isOpened():
                         ret, _ = cap.read()
                         cap.release()
