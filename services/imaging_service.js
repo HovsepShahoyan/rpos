@@ -17,12 +17,14 @@ var __extends = (this && this.__extends) || (function () {
 var fs = require("fs");
 var SoapService = require("../lib/SoapService");
 var utils_1 = require("../lib/utils");
+const CommandClient = require("../lib/CommandClient.js");
 var utils = utils_1.Utils.utils;
 var ImagingService = (function (_super) {
     __extends(ImagingService, _super);
     function ImagingService(config, server, callback) {
         var _this = _super.call(this, config, server) || this;
         _this.brightness = 0;
+        _this.contrast = 0;
         _this.autoFocusMode = '';
         _this.focusNearLimit = 0;
         _this.focusFarLimit = 0;
@@ -37,6 +39,7 @@ var ImagingService = (function (_super) {
             onReady: function () { return console.log('imaging_service started'); }
         };
         _this.brightness = 50;
+        _this.contrast = 50;
         _this.autoFocusMode = "MANUAL";
         _this.focusDefaultSpeed = 0.5;
         _this.focusNearLimit = 1.0;
@@ -65,6 +68,10 @@ var ImagingService = (function (_super) {
                         Min: 0,
                         Max: 100
                     },
+                    Contrast: {
+                        Min: 0,
+                        Max: 100
+                    },
                     Focus: {
                         AutoFocusModes: ['AUTO', 'MANUAL'],
                         DefaultSpeed: {
@@ -88,6 +95,7 @@ var ImagingService = (function (_super) {
                 var GetImagingSettingsResponse = {
                     ImagingSettings: {
                         Brightness: _this.brightness,
+                        Contrast: _this.contrast,
                         Focus: {
                             AutoFocusMode: _this.autoFocusMode,
                             DefaultSpeed: _this.focusDefaultSpeed,
@@ -102,18 +110,24 @@ var ImagingService = (function (_super) {
 	    function myCustomBrightnessFunction(brightness) {
  		 console.log('[Custom Function] Adjusting brightness to:', brightness);
 	    }
+        function myCustomContrastFunction(contrast) {
+ 		 console.log('[Custom Function] Adjusting contrast to:', contrast);
+	    }
         port.SetImagingSettings = function (args) {
             var SetImagingSettingsResponse = {};
             console.log('====== SetImagingSettings triggered ======');
             console.log(JSON.stringify(args, null, 2));
             if (args.ImagingSettings) {
-                if (args.ImagingSettings.Brightness) {
-		     myCustomBrightnessFunction(_this.brightness);
+                if (args.ImagingSettings.Contrast) {
+		     myCustomContrastFunction(_this.contrast);
+                    _this.contrast = args.ImagingSettings.Contrast;
+                    console.log('Contrast received:', args.ImagingSettings.Contrast);
+                    CommandClient.setContrast(args.ImagingSettings.Contrast);
+             myCustomBrightnessFunction(_this.brightness);
                     _this.brightness = args.ImagingSettings.Brightness;
                     console.log('Brightness received:', args.ImagingSettings.Brightness);
-                    if (_this.callback)
-                        _this.callback('brightness', { value: _this.brightness });
-                }
+                    CommandClient.setBrightness(args.ImagingSettings.Brightness);
+                }                
                 if (args.ImagingSettings.Focus) {
                     if (args.ImagingSettings.Focus.AutoFocusMode) {
                         _this.autoFocusMode = args.ImagingSettings.Focus.AutoFocusMode;
