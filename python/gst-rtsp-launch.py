@@ -151,7 +151,6 @@ class StreamServer:
         #self.username = "admin"
         #self.password = "admin"
 
-        
         ##################################################################################################################################################################
         # Palette 
         #    0 to 100: Tweak palette (default=0)
@@ -252,7 +251,6 @@ class StreamServer:
         log.debug(f"[DEBUG] Overlay path: {overlay_path}")
 
         if mount_name == "stream":
-            # Decode and convert to 1350x1080 frames at source
             gst_pipeline = (
                 f'rtspsrc location={rtsp_input_url} latency=0 ! '
                 f'rtph264depay ! h264parse ! nvv4l2decoder ! '
@@ -261,7 +259,6 @@ class StreamServer:
                 f'appsink drop=true max-buffers=3 sync=false'
             )
         else:
-            # Original pipeline for other mount names
             gst_pipeline = (
                 f'rtspsrc location={rtsp_input_url} latency=0 ! '
                 f'rtph264depay ! h264parse ! nvv4l2decoder ! '
@@ -271,8 +268,6 @@ class StreamServer:
             )
 
         cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
-        #cap.set(cv2.CAP_PROP_BUFFERSIZE, 0)  # Reduced buffer size for lower latency
-       # cap.set(cv2.CAP_PROP_FPS, 25)  # Force FPS if possible
 
         if not cap.isOpened():
             log.error(f"[ERROR] Cannot open RTSP stream: {rtsp_input_url}")
@@ -293,15 +288,13 @@ class StreamServer:
 
         log.debug(f"[DEBUG] Camera resolution: {width}x{height}, FPS: {fps}")
 
-        if mount_name == "stream":
+        if mount_name == "stream": 
             pipeline_str = (
                 f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
                 f"latency=0 sync=false "
                 f"! video/x-raw,format=BGRx,width=1350,height=1080,framerate={fps}/1 "
-                # Add black borders first
                 f"! videobox left=-285 right=-285 border-alpha=0 "
                 f"! video/x-raw,width=1920,height=1080 "
-                # Convert to NVMM format for hardware acceleration
                 f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
                 f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
                 f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
@@ -355,6 +348,7 @@ class StreamServer:
             "flag": 0,
             "D": 0
         }
+
         log.debug(f"[DEBUG] Initialized overlay data: {overlay_data}")
 
         # Preload overlay image with size adjustment for "stream"
@@ -441,7 +435,6 @@ class StreamServer:
 
                 time.sleep(0.05)  # Adjusted for better performance
 
-
         watcher_thread = threading.Thread(target=file_watcher, daemon=True)
         watcher_thread.start()
 
@@ -473,10 +466,6 @@ class StreamServer:
                 if not ret or frame is None:
                     log.error("[Overlay] Failed to grab frame after retries")
                     return
-                
-                
-                
-                #frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
 
                 # Calculate processing time
                 processing_time = time.time() - start_time
@@ -537,8 +526,6 @@ class StreamServer:
                             )
 
                 # ... rest of the code remains the same ...
-
-
                 # Draw text overlays with improved efficiency
 
                 h, w = frame.shape[:2]
@@ -822,11 +809,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.21:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:3333/")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.33:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.21:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.33:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)

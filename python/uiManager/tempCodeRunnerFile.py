@@ -1,1 +1,0 @@
-str_IRCam_set_zoom
