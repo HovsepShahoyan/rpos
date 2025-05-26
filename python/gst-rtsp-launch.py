@@ -19,11 +19,6 @@ args = parser.parse_args()
 from PySide6.QtCore import QDataStream, QIODevice
 from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout,QLabel, QPushButton, QLineEdit, QTextEdit, QStatusBar
 from PySide6.QtNetwork import QTcpSocket, QAbstractSocket
-from  TCPDataParsing import stmd_commands
-from   TCPCommunication import client_network, connection
-from   uiManager.ui_conection_manager import ConnectionUI
-from   uiManager.ui_manager import UI_Manager
-from   uiManager.gst_test import VideoPlayer
 from multiprocessing import Process
 
 # --------------------------------------------------------------------------- # 
@@ -484,7 +479,7 @@ class StreamServer:
                     
                     # Original resolution (based on mount_name)
                     if mount_name == "stream":
-                        original_width = 1920
+                        original_width = 1350
                         original_height = 1080
                     else:
                         original_width = 1920
@@ -501,7 +496,7 @@ class StreamServer:
                     # Scale coordinates to match the processed frame size
                     if mount_name == "stream":
                         # Scale x coordinate
-                        x1_scaled = int(x1 * (1920 / 1920))
+                        x1_scaled = int(x1 * (1350 / 1920))
                         # Scale y coordinate
                         y1_scaled = int(y1 * (1080 / 1080))
                         x1, y1 = x1_scaled, y1_scaled
