@@ -244,7 +244,7 @@ class StreamServer:
         log.debug(f"[DEBUG] Starting OpenCV overlay stream for mount: {mount_name}")
         log.debug(f"[DEBUG] RTSP input URL: {rtsp_input_url}")
         log.debug(f"[DEBUG] Overlay path: {overlay_path}")
-
+        
         if mount_name == "stream":
             gst_pipeline = (
                 f'rtspsrc location={rtsp_input_url} latency=0 ! '
@@ -326,6 +326,7 @@ class StreamServer:
         angles_path = "/tmp/overlay_angles.json"
         hyusis_path = "/tmp/overlay_hyusis.json"
         distance_path = "/tmp/overlay_distance.json"
+        menu_path = "/tmp/menu_overlay.json"
         log.debug(f"[DEBUG] Overlay data paths: {coords_path}, {gps_path}, {angles_path}, {hyusis_path}")
 
         # Initialize overlay data
@@ -341,6 +342,7 @@ class StreamServer:
             "delta_x": 0,
             "delta_y": 0,
             "flag": 0,
+            "menu_flag": 0,
             "D": 0
         }
 
@@ -357,8 +359,21 @@ class StreamServer:
         def file_watcher():
             nonlocal overlay
             last_overlay_mtime = 0
+            last_menu_mtime = 0  
             last_coords_mtime = 0
             while True:
+                # Check menu flag file
+                try:
+                    if os.path.exists(menu_path):
+                        current_menu_mtime = os.path.getmtime(menu_path)
+                        if current_menu_mtime != last_menu_mtime:
+                            last_menu_mtime = current_menu_mtime
+                            with open(menu_path, "r") as f:
+                                menu_data = json.load(f)
+                                overlay_data["menu_flag"] = int(menu_data.get("Flag"))
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read menu flag data: {e}")
+
                 try:
                     # Check if the overlay file has been modified
                     if os.path.exists(overlay_path):
@@ -571,6 +586,84 @@ class StreamServer:
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
                 cv2.putText(frame, angle_label, (w//2 - 200, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+                
+
+                ################## BUTTONS ###########################
+
+
+                # Button 1 (existing) parameters
+                rect_width = 80
+                rect_height = 40
+                bottom_offset = 20
+                button1_top_left_x = (w - rect_width) // 2  # 920
+                button1_top_left_y = h - rect_height - bottom_offset  # 1020
+                # Draw first filled rectangle (button)
+                cv2.rectangle(frame,
+                            (button1_top_left_x, button1_top_left_y),
+                            (button1_top_left_x + rect_width, button1_top_left_y + rect_height),
+                            (0, 255, 0), thickness=-1)
+                # Button 2 parameters - same size, vertically aligned, 100 pixels to the right of Button 1
+                horizontal_spacing = 100
+                button2_top_left_x = button1_top_left_x + rect_width + horizontal_spacing  # 920 + 80 + 100 = 1100
+                button2_top_left_y = button1_top_left_y
+                # Draw second filled rectangle (button)
+                cv2.rectangle(frame,
+                            (button2_top_left_x, button2_top_left_y),
+                            (button2_top_left_x + rect_width, button2_top_left_y + rect_height),
+                            (0, 0, 255), thickness=-1)  # red for differentiation
+                # -- If you want to check if a point (px, py) is inside any button with inverted y-axis:
+                # Coordinates in inverted Y:
+                # Button 1: x in [920, 1000], y in [20, 60]
+                # Button 2: x in [1100, 1180], y in [20, 60]          
+
+                # Draw white rectangle in left top corner if menu flag is set
+                if overlay_data.get("menu_flag", 0) == 1:
+                    # Big white rectangle dimensions (adjust as needed)
+                    menu_width = 400
+                    menu_height = 300
+                    margin_top = 10
+                    margin_left = 10
+                    
+                    # Draw main white rectangle
+                    cv2.rectangle(frame,
+                                (margin_left, margin_top),
+                                (margin_left + menu_width, margin_top + menu_height),
+                                (255, 255, 255), thickness=-1)
+                    
+                    # NorthConnect button parameters (top section of rectangle)
+                    button_height = 60  # Height of the button
+                    button_width = menu_width - 20  # Width with 10px padding on each side
+                    
+                    # Button position (centered horizontally in the white rectangle)
+                    button_x = margin_left + 10
+                    button_y = margin_top + 10
+                    
+                    # Draw button background (blue color)
+                    cv2.rectangle(frame,
+                                (button_x, button_y),
+                                (button_x + button_width, button_y + button_height),
+                                (0, 120, 255), thickness=-1)  # Orange-blue color
+                    
+                    # Add button text
+                    text = "NorthConnect"
+                    font_scale = 1.0
+                    thickness = 2
+                    
+                    # Calculate text size for centering
+                    (text_width, text_height), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 
+                                                                font_scale, thickness)
+                    text_x = button_x + (button_width - text_width) // 2
+                    text_y = button_y + (button_height + text_height) // 2
+                    
+                    # Draw text (with black border for better visibility)
+                    cv2.putText(frame, text, (text_x, text_y),
+                            cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                            (0, 0, 0), thickness + 2, cv2.LINE_AA)  # Black border
+                    cv2.putText(frame, text, (text_x, text_y),
+                            cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                            (255, 255, 255), thickness, cv2.LINE_AA)  # White text
+
+                ################## BUTTONS ###########################
 
                 # Convert frame to GStreamer buffer with improved handling
                 #frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
@@ -804,11 +897,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.21:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:3333/")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.33:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.21:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.33:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
