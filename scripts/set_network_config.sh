@@ -8,33 +8,39 @@ fi
 
 # Arguments
 INTERFACE=$1
-NEW_IP=$2
-NEW_NETMASK=$3
-NEW_BROADCAST=$4
+IP_ADDR=$2
+SUBNET_MASK=$3
+GATEWAY=$4
+DNS1=$5
+DNS2=$6
 
 # Usage
-if [[ $# -ne 4 ]]; then
-    echo "Usage: $0 <interface> <ip-address> <netmask> <broadcast>"
-    echo "Example: $0 eth0 192.168.1.100 255.255.255.0 192.168.1.255"
+if [[ $# -ne 6 ]]; then
+    echo "Usage: $0 <interface> <ip-address> <subnet-mask> <gateway> <dns1> <dns2>"
+    echo "Example: $0 eth0 192.168.1.100 255.255.255.0 192.168.1.1 8.8.8.8 8.8.4.4"
     exit 1
 fi
 
 echo "🔧 Configuring network interface $INTERFACE..."
-echo "➡️ IP Address: $NEW_IP"
-echo "➡️ Netmask: $NEW_NETMASK"
-echo "➡️ Broadcast: $NEW_BROADCAST"
+echo "➡️ IP Address: $IP_ADDR"
+echo "➡️ Subnet Mask: $SUBNET_MASK"
+echo "➡️ Gateway: $GATEWAY"
+echo "➡️ Primary DNS: $DNS1"
+echo "➡️ Secondary DNS: $DNS2"
 
-# Bring the interface down
-ip link set dev "$INTERFACE" down
-
-# Remove old IP addresses
+# Configure IP address and subnet mask
 ip addr flush dev "$INTERFACE"
+ip addr add "$IP_ADDR/$SUBNET_MASK" dev "$INTERFACE"
 
-# Add the new IP, netmask, and broadcast
-ip addr add "$NEW_IP"/"$NEW_NETMASK" brd "$NEW_BROADCAST" dev "$INTERFACE"
+# Configure gateway
+ip route del default 2>/dev/null
+ip route add default via "$GATEWAY" dev "$INTERFACE"
 
-# Bring the interface up
+# Configure DNS
+echo "nameserver $DNS1" > /etc/resolv.conf
+echo "nameserver $DNS2" >> /etc/resolv.conf
+
+# Bring interface up
 ip link set dev "$INTERFACE" up
 
 echo "✅ Network configuration updated successfully."
-
