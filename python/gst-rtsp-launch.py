@@ -327,6 +327,7 @@ class StreamServer:
         hyusis_path = "/tmp/overlay_hyusis.json"
         distance_path = "/tmp/overlay_distance.json"
         menu_path = "/tmp/menu_overlay.json"
+        menu_input_path = "/tmp/menu_input.json"
         log.debug(f"[DEBUG] Overlay data paths: {coords_path}, {gps_path}, {angles_path}, {hyusis_path}")
 
         # Initialize overlay data
@@ -343,7 +344,11 @@ class StreamServer:
             "delta_y": 0,
             "flag": 0,
             "menu_flag": 0,
-            "D": 0
+            "D": 0,
+            "field1Flag": 0,
+            "field2Flag": 0,    
+            "field1_value": "0",
+            "field2_value": "0"
         }
 
         log.debug(f"[DEBUG] Initialized overlay data: {overlay_data}")
@@ -363,6 +368,19 @@ class StreamServer:
             last_coords_mtime = 0
             while True:
                 # Check menu flag file
+
+                # Inside file_watcher() while loop:
+                try:
+                    if os.path.exists(menu_input_path):
+                        with open(menu_input_path, "r") as f:
+                            input_data = json.load(f)
+                            overlay_data["field1Flag"] = int(input_data.get("field1Flag", 0))
+                            overlay_data["field2Flag"] = int(input_data.get("field2Flag", 0))
+                            overlay_data["field1_value"] = str(input_data.get("field1_value", "0"))
+                            overlay_data["field2_value"] = str(input_data.get("field2_value", "0"))
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read menu input: {e}")
+                    
                 try:
                     if os.path.exists(menu_path):
                         current_menu_mtime = os.path.getmtime(menu_path)
@@ -616,9 +634,8 @@ class StreamServer:
                 # Button 1: x in [920, 1000], y in [20, 60]
                 # Button 2: x in [1100, 1180], y in [20, 60]          
 
-                # Draw white rectangle in left top corner if menu flag is set
                 if overlay_data.get("menu_flag", 0) == 1:
-                    # Big white rectangle dimensions (adjust as needed)
+                    # Big white rectangle dimensions
                     menu_width = 400
                     menu_height = 300
                     margin_top = 10
@@ -630,39 +647,131 @@ class StreamServer:
                                 (margin_left + menu_width, margin_top + menu_height),
                                 (255, 255, 255), thickness=-1)
                     
-                    # NorthConnect button parameters (top section of rectangle)
-                    button_height = 60  # Height of the button
-                    button_width = menu_width - 20  # Width with 10px padding on each side
-                    
-                    # Button position (centered horizontally in the white rectangle)
+                    # NorthConnect button (top section)
+                    button_height = 60
+                    button_width = menu_width - 20
                     button_x = margin_left + 10
                     button_y = margin_top + 10
-                    
-                    # Draw button background (blue color)
                     cv2.rectangle(frame,
                                 (button_x, button_y),
                                 (button_x + button_width, button_y + button_height),
-                                (0, 120, 255), thickness=-1)  # Orange-blue color
+                                (0, 120, 255), thickness=-1)
                     
-                    # Add button text
+                    # NorthConnect text
                     text = "NorthConnect"
                     font_scale = 1.0
                     thickness = 2
-                    
-                    # Calculate text size for centering
                     (text_width, text_height), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 
                                                                 font_scale, thickness)
                     text_x = button_x + (button_width - text_width) // 2
                     text_y = button_y + (button_height + text_height) // 2
-                    
-                    # Draw text (with black border for better visibility)
                     cv2.putText(frame, text, (text_x, text_y),
                             cv2.FONT_HERSHEY_SIMPLEX, font_scale,
-                            (0, 0, 0), thickness + 2, cv2.LINE_AA)  # Black border
+                            (0, 0, 0), thickness + 2, cv2.LINE_AA)
                     cv2.putText(frame, text, (text_x, text_y),
                             cv2.FONT_HERSHEY_SIMPLEX, font_scale,
-                            (255, 255, 255), thickness, cv2.LINE_AA)  # White text
+                            (255, 255, 255), thickness, cv2.LINE_AA)
 
+                    # Input fields
+                    input_height = 40
+                    input_y_start = button_y + button_height + 20
+                    
+                    # Field 1
+                    field1_rect = (margin_left + 20, input_y_start, menu_width - 40, input_height)
+                    field1_color = (0, 200, 0) if overlay_data.get("field1Flag", 0) == 1 else (200, 200, 200)
+                    cv2.rectangle(frame,
+                                (field1_rect[0], field1_rect[1]),
+                                (field1_rect[0] + field1_rect[2], field1_rect[1] + field1_rect[3]),
+                                field1_color, -1)
+                    cv2.putText(frame, "Field 1:", 
+                                (field1_rect[0] - 80, field1_rect[1] + field1_rect[3]//2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+                    # Display current value
+                    cv2.putText(frame, overlay_data.get("field1_value", "0"), 
+                                (field1_rect[0] + 10, field1_rect[1] + field1_rect[3]//2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+                    # Field 2
+                    field2_rect = (margin_left + 20, input_y_start + input_height + 20, menu_width - 40, input_height)
+                    field2_color = (0, 200, 0) if overlay_data.get("field2Flag", 0) == 1 else (200, 200, 200)
+                    cv2.rectangle(frame,
+                                (field2_rect[0], field2_rect[1]),
+                                (field2_rect[0] + field2_rect[2], field2_rect[1] + field2_rect[3]),
+                                field2_color, -1)
+                    cv2.putText(frame, "Field 2:", 
+                                (field2_rect[0] - 80, field2_rect[1] + field2_rect[3]//2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+                    # Display current value
+                    cv2.putText(frame, overlay_data.get("field2_value", "0"), 
+                                (field2_rect[0] + 10, field2_rect[1] + field2_rect[3]//2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+                    # Draw numpad if either field is active
+                    if overlay_data.get("field1Flag", 0) == 1 or overlay_data.get("field2Flag", 0) == 1:
+                        # Draw semi-transparent overlay
+                        overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
+                        overlay_alpha[:] = (0, 0, 0)
+                        alpha = 0.7
+                        #cv2.addWeighted(overlay_alpha, alpha, frame, 1 - alpha, 0, frame)
+                        
+                        # Numpad dimensions
+                        numpad_width = 300
+                        numpad_height = 300
+                        numpad_x = (w - numpad_width) // 2
+                        numpad_y = (h - numpad_height) // 2
+                        
+                        # Draw numpad background
+                        cv2.rectangle(frame,
+                                    (numpad_x, numpad_y),
+                                    (numpad_x + numpad_width, numpad_y + numpad_height),
+                                    (100, 100, 100), -1)
+                        cv2.rectangle(frame,
+                                    (numpad_x, numpad_y),
+                                    (numpad_x + numpad_width, numpad_y + numpad_height),
+                                    (0, 0, 0), 2)
+                        
+                        # Draw active field value display
+                        active_value = overlay_data.get("field1_value", "0") if overlay_data.get("field1Flag", 0) == 1 else overlay_data.get("field2_value", "0")
+                        cv2.putText(frame, active_value, 
+                                    (numpad_x + 10, numpad_y + 40),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                        
+                        # Numpad buttons
+                        buttons = [
+                            ("1", numpad_x + 20, numpad_y + 70),
+                            ("2", numpad_x + 120, numpad_y + 70),
+                            ("3", numpad_x + 220, numpad_y + 70),
+                            ("4", numpad_x + 20, numpad_y + 140),
+                            ("5", numpad_x + 120, numpad_y + 140),
+                            ("6", numpad_x + 220, numpad_y + 140),
+                            ("7", numpad_x + 20, numpad_y + 210),
+                            ("8", numpad_x + 120, numpad_y + 210),
+                            ("9", numpad_x + 220, numpad_y + 210),
+                            ("0", numpad_x + 20, numpad_y + 280),
+                            ("C", numpad_x + 120, numpad_y + 280),
+                            ("OK", numpad_x + 220, numpad_y + 280),
+                        ]
+                        
+                        # Draw buttons
+                        btn_width = 80
+                        btn_height = 50
+                        for text, x, y in buttons:
+                            cv2.rectangle(frame,
+                                        (x, y),
+                                        (x + btn_width, y + btn_height),
+                                        (200, 200, 200), -1)
+                            cv2.rectangle(frame,
+                                        (x, y),
+                                        (x + btn_width, y + btn_height),
+                                        (0, 0, 0), 2)
+                            
+                            # Center text in button
+                            (text_width, text_height), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+                            text_x = x + (btn_width - text_width) // 2
+                            text_y = y + (btn_height + text_height) // 2
+                            cv2.putText(frame, text, (text_x, text_y),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+                            
                 ################## BUTTONS ###########################
 
                 # Convert frame to GStreamer buffer with improved handling
