@@ -328,6 +328,8 @@ class StreamServer:
         distance_path = "/tmp/overlay_distance.json"
         menu_path = "/tmp/menu_overlay.json"
         menu_input_path = "/tmp/menu_input.json"
+        network_path = "/tmp/network.json"
+        network_input_path = "/tmp/network_numpad.json"
         log.debug(f"[DEBUG] Overlay data paths: {coords_path}, {gps_path}, {angles_path}, {hyusis_path}")
 
         # Initialize overlay data
@@ -348,7 +350,15 @@ class StreamServer:
             "field1Flag": 0,
             "field2Flag": 0,    
             "field1_value": "0",
-            "field2_value": "0"
+            "field2_value": "0",
+            "network_flag": 0, 
+            "active_network_field": "ip_address",
+            "ip_address": "0.0.0.0",
+            "subnet_mask": "0.0.0.0",
+            "gateway": "0.0.0.0",
+            "DNS1": "0.0.0.0",
+            "DNS2": "0.0.0.0",
+            "numpad_flag": 0,
         }
 
         log.debug(f"[DEBUG] Initialized overlay data: {overlay_data}")
@@ -366,10 +376,53 @@ class StreamServer:
             last_overlay_mtime = 0
             last_menu_mtime = 0  
             last_coords_mtime = 0
+            last_network_mtime = 0
             while True:
                 # Check menu flag file
 
                 # Inside file_watcher() while loop:
+                try:
+                    if os.path.exists(network_path):
+                        current_network_mtime = os.path.getmtime(network_path)
+                        if current_network_mtime != last_network_mtime:
+                            last_network_mtime = current_network_mtime
+                            with open(network_path, "r") as f:
+                                net_data = json.load(f)
+                                overlay_data["network_flag"]        = int(net_data.get("network_flag", 0))
+                                overlay_data["active_network_field"] = net_data.get("activeField", None)
+                                overlay_data["ip_address"]   = str(net_data.get("ip_address", "0.0.0.0"))
+                                overlay_data["subnet_mask"]  = str(net_data.get("subnet_mask", "0.0.0.0"))
+                                overlay_data["gateway"]      = str(net_data.get("gateway", "0.0.0.0"))
+                                overlay_data["DNS1"]         = str(net_data.get("DNS1", "0.0.0.0"))
+                                overlay_data["DNS2"]         = str(net_data.get("DNS2", "0.0.0.0"))
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read network data: {e}")
+
+                try:
+                    if os.path.exists(network_input_path):
+                        with open(network_input_path, "r") as f:
+                            pad = json.load(f)
+                            overlay_data["numpad_flag"] = int(pad.get("numpad_flag", 0))
+                            pressed = pad.get("digit", "")
+                            if overlay_data["numpad_flag"] == 1 and overlay_data["active_network_field"]:
+                                fld = overlay_data["active_network_field"]
+                                cur = overlay_data.get(fld, "")
+                                if pressed == "C":
+                                    overlay_data[fld] = ""
+                                elif pressed == "OK":
+                                    overlay_data["numpad_flag"] = 0  # Close numpad
+                                    # Optionally write back to network.json here to freeze the value.
+                                else:
+                                    if cur == "":  # Only append if current value is empty
+                                        overlay_data[fld] = str(pressed)
+                                    else:
+                                        overlay_data[fld] = cur + str(pressed)
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read network numpad data: {e}")
+
+                time.sleep(0.05)
+
+
                 try:
                     if os.path.exists(menu_input_path):
                         with open(menu_input_path, "r") as f:
@@ -472,6 +525,7 @@ class StreamServer:
             frame_count = 0
             processing_times = []
             last_push_time = time.time()
+            last_network_mtime = 0   #
             lock = threading.Lock()
 
             def push_frame(_appsrc, _):
@@ -632,7 +686,22 @@ class StreamServer:
                 # -- If you want to check if a point (px, py) is inside any button with inverted y-axis:
                 # Coordinates in inverted Y:
                 # Button 1: x in [920, 1000], y in [20, 60]
-                # Button 2: x in [1100, 1180], y in [20, 60]          
+                # Button 2: x in [1100, 1180], y in [20, 60]
+                # 
+                button3_w = rect_width + 40
+                button3_h = rect_height
+                button3_x = button2_top_left_x + rect_width + horizontal_spacing
+                button3_y = button1_top_left_y
+                cv2.rectangle(frame,
+                            (button3_x, button3_y),
+                            (button3_x + button3_w, button3_y + button3_h),
+                            (255, 165,  0), -1)
+                text = "NetCfg"
+                (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                tx = button3_x + (button3_w - tw)//2
+                ty = button3_y + (button3_h + th)//2
+                cv2.putText(frame, text, (tx, ty),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,0), 2, cv2.LINE_AA)          
 
                 if overlay_data.get("menu_flag", 0) == 1:
                     # Big white rectangle dimensions
@@ -646,6 +715,7 @@ class StreamServer:
                                 (margin_left, margin_top),
                                 (margin_left + menu_width, margin_top + menu_height),
                                 (255, 255, 255), thickness=-1)
+                                        
                     
                     # NorthConnect button (top section)
                     button_height = 60
@@ -772,6 +842,103 @@ class StreamServer:
                             cv2.putText(frame, text, (text_x, text_y),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
                             
+                if overlay_data.get("network_flag", 0) == 1:
+                    net_w = 400
+                    net_h = 400
+                    margin_top  = 50
+                    margin_left = (w - net_w)//2
+
+                    # White background + border
+                    cv2.rectangle(frame,
+                                (margin_left, margin_top),
+                                (margin_left + net_w, margin_top + net_h),
+                                (255, 255, 255), -1)
+                    cv2.rectangle(frame,
+                                (margin_left, margin_top),
+                                (margin_left + net_w, margin_top + net_h),
+                                (0, 0, 0), 2)
+
+                    labels = ["IP Address:", "Subnet Mask:", "Gateway:", "DNS 1:", "DNS 2:"]
+                    keys   = ["ip_address",   "subnet_mask",   "gateway",  "DNS1",   "DNS2"]
+                    box_h = 40
+                    box_w = net_w - 40
+                    y_start = margin_top + 40
+
+                    field_boxes = {}  # for click‐detection (see below)
+                    for i, (lbl, key) in enumerate(zip(labels, keys)):
+                        y0 = y_start + i*(box_h + 20)
+                        x0 = margin_left + 20
+
+                        # Text label
+                        cv2.putText(frame, lbl, (x0, y0 + box_h//2 + 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,0), 2, cv2.LINE_AA)
+
+                        # Box behind text
+                        is_act = (overlay_data.get("active_network_field") == key)
+                        col   = (0, 200, 0) if is_act else (200,200,200)
+                        bx0 = x0 + 130
+                        by0 = y0
+                        bx1 = bx0 + box_w
+                        by1 = by0 + box_h
+                        field_boxes[key] = (bx0, by0, bx1, by1)
+                        cv2.rectangle(frame, (bx0, by0), (bx1, by1), col, -1)
+                        cv2.rectangle(frame, (bx0, by0), (bx1, by1), (0, 0, 0), 2)
+
+                        # Current text inside box
+                        cur_txt = overlay_data.get(key, "")
+                        cv2.putText(frame, cur_txt,
+                                    (bx0 + 10, by0 + box_h//2 + 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+
+                        # If network‐numpad should be drawn:
+                        if overlay_data.get("numpad_flag", 0) == 1 and overlay_data.get("active_network_field"):
+                            overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
+                            overlay_alpha[:] = (0, 0, 0)
+                            alpha = 0.7
+                            #cv2.addWeighted(overlay_alpha, alpha, frame, 1-alpha, 0, frame)
+
+                            numpad_w  = 300
+                            numpad_h  = 300
+                            numpad_x  = (w - numpad_w)//2
+                            numpad_y  = (h - numpad_h)//2
+                            cv2.rectangle(frame, (numpad_x, numpad_y),
+                                        (numpad_x + numpad_w, numpad_y + numpad_h),
+                                        (100, 100, 100), -1)
+                            cv2.rectangle(frame, (numpad_x, numpad_y),
+                                        (numpad_x + numpad_w, numpad_y + numpad_h),
+                                        (0,   0,   0), 2)
+
+                            # Draw the current active field value at the top of the numpad
+                            act = overlay_data["active_network_field"]
+                            val = overlay_data.get(act, "")
+                            cv2.putText(frame, val, (numpad_x + 10, numpad_y + 40),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2, cv2.LINE_AA)
+
+                            buttons = [
+                                ("1", numpad_x + 20,  numpad_y + 70),
+                                ("2", numpad_x + 120, numpad_y + 70),
+                                ("3", numpad_x + 220, numpad_y + 70),
+                                ("4", numpad_x + 20,  numpad_y + 140),
+                                ("5", numpad_x + 120, numpad_y + 140),
+                                ("6", numpad_x + 220, numpad_y + 140),
+                                ("7", numpad_x + 20,  numpad_y + 210),
+                                ("8", numpad_x + 120, numpad_y + 210),
+                                ("9", numpad_x + 220, numpad_y + 210),
+                                ("0", numpad_x + 20,  numpad_y + 280),
+                                ("C", numpad_x + 120, numpad_y + 280),
+                                ("OK",numpad_x + 220, numpad_y + 280),
+                            ]
+                            bw = 80
+                            bh = 50
+                            for txt, bx, by in buttons:
+                                cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (200,200,200), -1)
+                                cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (0,0,0), 2)
+                                (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+                                tx = bx + (bw - tw)//2
+                                ty = by + (bh + th)//2
+                                cv2.putText(frame, txt, (tx, ty),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,0), 2, cv2.LINE_AA)
+                                    
                 ################## BUTTONS ###########################
 
                 # Convert frame to GStreamer buffer with improved handling

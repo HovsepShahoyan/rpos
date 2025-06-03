@@ -1,0 +1,10 @@
+{
+  "network_flag": 1,
+  "activeField": "DNS1",
+  "ip_address": "0",
+  "subnet_mask": "255.255.255.0",
+  "gateway": "192.168.0.185",
+  "DNS1": "8.8.8.877",
+  "DNS2": "8.8.4.4222330",
+  "numpad_flag": 1
+}
