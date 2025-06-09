@@ -330,6 +330,7 @@ class StreamServer:
         menu_input_path = "/tmp/menu_input.json"
         network_path = "/tmp/network.json"
         network_input_path = "/tmp/network_numpad.json"
+        presets_path     = "/tmp/presets.json"
         log.debug(f"[DEBUG] Overlay data paths: {coords_path}, {gps_path}, {angles_path}, {hyusis_path}")
 
         # Initialize overlay data
@@ -359,6 +360,12 @@ class StreamServer:
             "DNS1": "0.0.0.0",
             "DNS2": "0.0.0.0",
             "numpad_flag": 0,
+            "presets_flag":      0,
+            "add_marker_flag":   0,
+            "delete_marker_flag":0,
+            "current_preset_index": 0,     # 0–9
+            "marker_name":       "",
+            "markers":           [""] * 10,
         }
 
         log.debug(f"[DEBUG] Initialized overlay data: {overlay_data}")
@@ -382,6 +389,16 @@ class StreamServer:
 
                 # Inside file_watcher() while loop:
                 try:
+                    if os.path.exists(presets_path):
+                        with open(presets_path, "r") as f:
+                            data = json.load(f)
+                            # override your overlay_data from disk
+                            overlay_data["presets_flag"]         = int(data.get("presets_flag", 0))
+                            overlay_data["current_preset_index"] = int(data.get("current_preset_index", 0))
+                            overlay_data["markers"]              = data.get("markers", [""] * 10)
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read presets: {e}")
+
                     if os.path.exists(network_path):
                         current_network_mtime = os.path.getmtime(network_path)
                         if current_network_mtime != last_network_mtime:
@@ -774,6 +791,142 @@ class StreamServer:
                 ty = button3_y + (button3_h + th) // 2
                 cv2.putText(frame, text, (tx, ty),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
+                
+                # BUTTON  4 PRESET
+                
+                button4_w, button4_h = rect_width + 60, rect_height
+                button4_x = button3_x + button3_w + horizontal_spacing
+                button4_y = button1_top_left_y
+                cv2.rectangle(frame,
+                            (button4_x, button4_y),
+                            (button4_x + button4_w, button4_y + button4_h),
+                            DARK_TURQUOISE, thickness=-1)
+                cv2.rectangle(frame,
+                            (button4_x, button4_y),
+                            (button4_x + button4_w, button4_y + button4_h),
+                            MEDIUM_TURQUOISE, thickness=2)
+                text = "Presets"
+                (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                tx = button4_x + (button4_w - tw) // 2
+                ty = button4_y + (button4_h + th) // 2
+                cv2.putText(frame, text, (tx, ty),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
+                
+
+                if overlay_data["presets_flag"] == 1:
+                    panel_w, panel_h = 300, 500
+                    panel_x = w - panel_w - 10
+                    panel_y = 50
+                    # Background & border
+                    cv2.rectangle(frame, (panel_x, panel_y),
+                                (panel_x + panel_w, panel_y + panel_h),
+                                DARK_GREEN, thickness=-1)
+                    cv2.rectangle(frame, (panel_x, panel_y),
+                                (panel_x + panel_w, panel_y + panel_h),
+                                MEDIUM_GREEN, thickness=2)
+
+                    # “Add Marker” button
+                    btn_h = 50
+                    cv2.rectangle(frame,
+                                (panel_x + 10, panel_y + 10),
+                                (panel_x + panel_w - 10, panel_y + 10 + btn_h),
+                                MEDIUM_GREEN, thickness=-1)
+                    cv2.putText(frame, "Add Marker",
+                                (panel_x + 20, panel_y + 10 + btn_h//2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+
+                    # “Delete Marker” button
+                    cv2.rectangle(frame,
+                                (panel_x + 10, panel_y + 20 + btn_h),
+                                (panel_x + panel_w - 10, panel_y + 20 + 2*btn_h),
+                                MEDIUM_GREEN, thickness=-1)
+                    cv2.putText(frame, "Delete Marker",
+                                (panel_x + 20, panel_y + 20 + btn_h + btn_h//2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+
+                    # List 10 markers
+                    slot_h = 30
+                    for i in range(10):
+                        y = panel_y + 30 + 2*btn_h + i*(slot_h + 5)
+                        text = overlay_data["markers"][i] or f"<empty {i+1}>"
+                        color = WHITE if i != overlay_data["current_preset_index"] else MEDIUM_GREEN
+                        color = MEDIUM_GREEN if i == overlay_data["current_preset_index"] else WHITE
+                        cv2.putText(frame, f"{i+1}. {text}",
+                                    (panel_x + 20, y),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                        
+                    # ── Delete logic ────────────────────────────────────────────────────────
+                    if overlay_data.get("delete_marker_flag", 0) == 1:
+                        idx = overlay_data["current_preset_index"]
+                        overlay_data["markers"][idx] = ""
+                        overlay_data["delete_marker_flag"] = 0
+                        # persist
+                        with open(presets_path, "w") as f:
+                            json.dump({
+                                "presets_flag":         overlay_data["presets_flag"],
+                                "current_preset_index": overlay_data["current_preset_index"],
+                                "markers":              overlay_data["markers"],
+                            }, f)
+                    
+                    # ── On-screen keyboard for naming new marker ───────────────────────────
+                    if overlay_data.get("add_marker_flag", 0) == 1:
+                        # Darken background
+                        mask = frame.copy()
+                        cv2.rectangle(mask, (0, 0), (w, h), BLACK, thickness=-1)
+                        cv2.addWeighted(mask, 0.6, frame, 0.4, 0, frame)
+
+                        # Keyboard container
+                        kb_w, kb_h = 300, 360
+                        kb_x, kb_y = (w - kb_w) // 2, (h - kb_h) // 2 + 40
+                        cv2.rectangle(frame, (kb_x, kb_y),
+                                    (kb_x + kb_w, kb_y + kb_h),
+                                    DARK_GREEN, thickness=-1)
+                        cv2.rectangle(frame, (kb_x, kb_y),
+                                    (kb_x + kb_w, kb_y + kb_h),
+                                    MEDIUM_GREEN, thickness=2)
+
+                        # Current input at top
+                        cv2.putText(frame, overlay_data.get("marker_name", ""),
+                                    (kb_x + 10, kb_y + 40),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, WHITE, 2, cv2.LINE_AA)
+
+                        # 4×4 grid buttons: numbers, dot, C, OK
+                        buttons = [
+                            ("1", kb_x + 10,  kb_y + 70),
+                            ("2", kb_x + 80,  kb_y + 70),
+                            ("3", kb_x + 150, kb_y + 70),
+                            ("4", kb_x + 10,  kb_y + 140),
+                            ("5", kb_x + 80,  kb_y + 140),
+                            ("6", kb_x + 150, kb_y + 140),
+                            ("7", kb_x + 10,  kb_y + 210),
+                            ("8", kb_x + 80,  kb_y + 210),
+                            ("9", kb_x + 150, kb_y + 210),
+                            (".", kb_x + 10,  kb_y + 280),
+                            ("0", kb_x + 80,  kb_y + 280),
+                            ("C", kb_x + 150, kb_y + 280),
+                            ("OK", kb_x + 220, kb_y + 280),
+                        ]
+                        btn_w, btn_h = 60, 50
+
+                        for txt, bx, by in buttons:
+                            # Draw button background & border
+                            cv2.rectangle(frame,
+                                        (bx, by),
+                                        (bx + btn_w, by + btn_h),
+                                        DARK_GREEN, thickness=-1)
+                            cv2.rectangle(frame,
+                                        (bx, by),
+                                        (bx + btn_w, by + btn_h),
+                                        MEDIUM_GREEN, thickness=2)
+
+                            # Center the text
+                            (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+                            tx = bx + (btn_w - tw) // 2
+                            ty = by + (btn_h + th) // 2
+                            cv2.putText(frame, txt, (tx, ty),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
+    
+
                 # ===========================
                 # MAIN MENU (when overlay_data["menu_flag"] == 1)
                 # ===========================
