@@ -1,5 +1,5 @@
 {
-  "network_flag": 0,
+  "network_flag": 1,
   "activeField": null,
   "ip_address": "192.168.0.86",
   "subnet_mask": "255.255.255.0",

@@ -331,6 +331,7 @@ class StreamServer:
         network_path = "/tmp/network.json"
         network_input_path = "/tmp/network_numpad.json"
         presets_path     = "/tmp/presets.json"
+        presets_numpad_path = "/tmp/presets_numpad.json"
         log.debug(f"[DEBUG] Overlay data paths: {coords_path}, {gps_path}, {angles_path}, {hyusis_path}")
 
         # Initialize overlay data
@@ -391,14 +392,65 @@ class StreamServer:
                 try:
                     if os.path.exists(presets_path):
                         with open(presets_path, "r") as f:
-                            data = json.load(f)
-                            # override your overlay_data from disk
-                            overlay_data["presets_flag"]         = int(data.get("presets_flag", 0))
-                            overlay_data["current_preset_index"] = int(data.get("current_preset_index", 0))
-                            overlay_data["markers"]              = data.get("markers", [""] * 10)
+                            p = json.load(f)
+                        overlay_data["presets_flag"] = int(p.get("presets_flag", 0))
+                        overlay_data["current_preset_index"] = int(p.get("current_preset_index", 0))
+                        overlay_data["add_marker_flag"] = int(p.get("add_marker_flag", 0))
+                        overlay_data["delete_marker_flag"] = int(p.get("delete_marker_flag", 0))
+                        overlay_data["markers"] = p.get("markers", [""] * 10)
+                        # Initialize marker_name when add_marker_flag is set
+                        if overlay_data["add_marker_flag"] == 1:
+                            overlay_data["marker_name"] = ""
+                        log.debug(f"[DEBUG] Loaded presets.json → add_marker_flag={overlay_data['add_marker_flag']}")
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to read presets: {e}")
 
+                try:
+                    if overlay_data.get("add_marker_flag", 0) == 1 and os.path.exists(presets_numpad_path):
+                        with open(presets_numpad_path, "r") as f:
+                            pad = json.load(f)
+                        flag = int(pad.get("numpad_flag", 0))
+                        digit = str(pad.get("digit", ""))
+                        if flag == 1:
+                            if digit == "C":
+                                overlay_data["marker_name"] = ""
+                            elif digit == "OK":
+                                # Save marker into the current slot
+                                idx = overlay_data["current_preset_index"]
+                                overlay_data["markers"][idx] = overlay_data["marker_name"]
+                                overlay_data["marker_name"] = ""
+                                overlay_data["add_marker_flag"] = 0  # Reset the flag
+                                # Persist everything back to presets.json
+                                with open(presets_path, "w") as pf:
+                                    json.dump({
+                                        "presets_flag": overlay_data["presets_flag"],
+                                        "current_preset_index": overlay_data["current_preset_index"],
+                                        "add_marker_flag": overlay_data["add_marker_flag"],
+                                        "delete_marker_flag": overlay_data["delete_marker_flag"],
+                                        "markers": overlay_data["markers"],
+                                    }, pf)
+                            else:
+                                # Append digit or dot
+                                overlay_data["marker_name"] += digit
+                            # Reset the numpad flag after processing
+
+
+                            # —— Persist the updated name so next frame still sees it —— 
+                            with open(presets_path, "w") as pf:
+                                json.dump({
+                                    "presets_flag":         overlay_data["presets_flag"],
+                                    "current_preset_index": overlay_data["current_preset_index"],
+                                    "add_marker_flag":      overlay_data["add_marker_flag"],
+                                    "delete_marker_flag":   overlay_data["delete_marker_flag"],
+                                    "markers":              overlay_data["markers"],
+                                    "marker_name":          overlay_data["marker_name"]
+                                }, pf, indent=2)
+                            # with open(presets_numpad_path, "w") as f:
+                            #     json.dump({"numpad_flag": 0, "digit": ""}, f)  # Reset the digit
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] presets numpad error: {e}")
+
+                try:
                     if os.path.exists(network_path):
                         current_network_mtime = os.path.getmtime(network_path)
                         if current_network_mtime != last_network_mtime:
@@ -438,7 +490,6 @@ class StreamServer:
                     log.warning(f"[Overlay Watcher] Failed to read network numpad data: {e}")
 
                 time.sleep(0.05)
-
 
                 try:
                     if os.path.exists(menu_input_path):
@@ -813,120 +864,117 @@ class StreamServer:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
                 
 
-                if overlay_data["presets_flag"] == 1:
-                    panel_w, panel_h = 300, 500
+                if overlay_data.get("presets_flag", 0) == 1:
+                    # Panel dimensions & position
+                    panel_w, panel_h = 350, 550  # increased height to fit 10 entries
                     panel_x = w - panel_w - 10
-                    panel_y = 50
+                    panel_y = 80  # move panel slightly up so it’s centered
                     # Background & border
-                    cv2.rectangle(frame, (panel_x, panel_y),
+                    cv2.rectangle(frame,
+                                (panel_x, panel_y),
                                 (panel_x + panel_w, panel_y + panel_h),
                                 DARK_GREEN, thickness=-1)
-                    cv2.rectangle(frame, (panel_x, panel_y),
+                    cv2.rectangle(frame,
+                                (panel_x, panel_y),
                                 (panel_x + panel_w, panel_y + panel_h),
                                 MEDIUM_GREEN, thickness=2)
-
                     # “Add Marker” button
                     btn_h = 50
+                    add_btn_y = panel_y + 20
                     cv2.rectangle(frame,
-                                (panel_x + 10, panel_y + 10),
-                                (panel_x + panel_w - 10, panel_y + 10 + btn_h),
+                                (panel_x + 10, add_btn_y),
+                                (panel_x + panel_w - 10, add_btn_y + btn_h),
                                 MEDIUM_GREEN, thickness=-1)
                     cv2.putText(frame, "Add Marker",
-                                (panel_x + 20, panel_y + 10 + btn_h//2 + 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
-
+                                (panel_x + 20, add_btn_y + btn_h // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2, cv2.LINE_AA)
                     # “Delete Marker” button
+                    del_btn_y = add_btn_y + btn_h + 10
                     cv2.rectangle(frame,
-                                (panel_x + 10, panel_y + 20 + btn_h),
-                                (panel_x + panel_w - 10, panel_y + 20 + 2*btn_h),
+                                (panel_x + 10, del_btn_y),
+                                (panel_x + panel_w - 10, del_btn_y + btn_h),
                                 MEDIUM_GREEN, thickness=-1)
                     cv2.putText(frame, "Delete Marker",
-                                (panel_x + 20, panel_y + 20 + btn_h + btn_h//2 + 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
-
-                    # List 10 markers
+                                (panel_x + 20, del_btn_y + btn_h // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2, cv2.LINE_AA)
+                    # List of 10 markers
                     slot_h = 30
+                    slots_start_y = del_btn_y + btn_h + 30  # extra padding so list sits well below buttons
                     for i in range(10):
-                        y = panel_y + 30 + 2*btn_h + i*(slot_h + 5)
-                        text = overlay_data["markers"][i] or f"<empty {i+1}>"
-                        color = WHITE if i != overlay_data["current_preset_index"] else MEDIUM_GREEN
+                        y = slots_start_y + i * (slot_h + 8)
+                        name = overlay_data["markers"][i] # or f"<empty {i + 1}>"
                         color = MEDIUM_GREEN if i == overlay_data["current_preset_index"] else WHITE
-                        cv2.putText(frame, f"{i+1}. {text}",
+                        cv2.putText(frame,
+                                    f"{i + 1}. {name}",
                                     (panel_x + 20, y),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-                        
-                    # ── Delete logic ────────────────────────────────────────────────────────
-                    if overlay_data.get("delete_marker_flag", 0) == 1:
-                        idx = overlay_data["current_preset_index"]
-                        overlay_data["markers"][idx] = ""
-                        overlay_data["delete_marker_flag"] = 0
-                        # persist
-                        with open(presets_path, "w") as f:
-                            json.dump({
-                                "presets_flag":         overlay_data["presets_flag"],
-                                "current_preset_index": overlay_data["current_preset_index"],
-                                "markers":              overlay_data["markers"],
-                            }, f)
-                    
-                    # ── On-screen keyboard for naming new marker ───────────────────────────
-                    if overlay_data.get("add_marker_flag", 0) == 1:
-                        # Darken background
-                        mask = frame.copy()
-                        cv2.rectangle(mask, (0, 0), (w, h), BLACK, thickness=-1)
-                        cv2.addWeighted(mask, 0.6, frame, 0.4, 0, frame)
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
 
-                        # Keyboard container
-                        kb_w, kb_h = 300, 360
-                        kb_x, kb_y = (w - kb_w) // 2, (h - kb_h) // 2 + 40
-                        cv2.rectangle(frame, (kb_x, kb_y),
-                                    (kb_x + kb_w, kb_y + kb_h),
+                # ── Delete logic ────────────────────────────────────────────────────────
+                if overlay_data.get("delete_marker_flag", 0) == 1:
+                    idx = overlay_data["current_preset_index"]
+                    overlay_data["markers"][idx] = ""
+                    overlay_data["delete_marker_flag"] = 0  # Reset the flag
+                    # persist
+                    with open(presets_path, "w") as f:
+                        json.dump({
+                            "presets_flag": overlay_data["presets_flag"],
+                            "current_preset_index": overlay_data["current_preset_index"],
+                            "add_marker_flag": overlay_data["add_marker_flag"],
+                            "delete_marker_flag": overlay_data["delete_marker_flag"],
+                            "markers": overlay_data["markers"],
+                        }, f)
+                # ── On-screen keyboard for naming new marker ───────────────────────────
+                if overlay_data.get("add_marker_flag", 0) == 1:
+                    # Darken background
+                    mask = frame.copy()
+                    cv2.rectangle(mask, (0, 0), (w, h), BLACK, thickness=-1)
+                    cv2.addWeighted(mask, 0.6, frame, 0.4, 0, frame)
+                    # Keyboard container
+                    kb_w, kb_h = 300, 360
+                    kb_x, kb_y = (w - kb_w) // 2, (h - kb_h) // 2 + 40
+                    cv2.rectangle(frame, (kb_x, kb_y),
+                                (kb_x + kb_w, kb_y + kb_h),
+                                DARK_GREEN, thickness=-1)
+                    cv2.rectangle(frame, (kb_x, kb_y),
+                                (kb_x + kb_w, kb_y + kb_h),
+                                MEDIUM_GREEN, thickness=2)
+                    # Current input at top
+                    cv2.putText(frame, overlay_data.get("marker_name", ""),
+                                (kb_x + 10, kb_y + 40),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.0, WHITE, 2, cv2.LINE_AA)
+                    # 4×4 grid buttons: numbers, dot, C, OK
+                    buttons = [
+                        ("1", kb_x + 10, kb_y + 70),
+                        ("2", kb_x + 80, kb_y + 70),
+                        ("3", kb_x + 150, kb_y + 70),
+                        ("4", kb_x + 10, kb_y + 140),
+                        ("5", kb_x + 80, kb_y + 140),
+                        ("6", kb_x + 150, kb_y + 140),
+                        ("7", kb_x + 10, kb_y + 210),
+                        ("8", kb_x + 80, kb_y + 210),
+                        ("9", kb_x + 150, kb_y + 210),
+                        (".", kb_x + 10, kb_y + 280),
+                        ("0", kb_x + 80, kb_y + 280),
+                        ("C", kb_x + 150, kb_y + 280),
+                        ("OK", kb_x + 220, kb_y + 280),
+                    ]
+                    btn_w, btn_h = 60, 50
+                    for txt, bx, by in buttons:
+                        # Draw button background & border
+                        cv2.rectangle(frame,
+                                    (bx, by),
+                                    (bx + btn_w, by + btn_h),
                                     DARK_GREEN, thickness=-1)
-                        cv2.rectangle(frame, (kb_x, kb_y),
-                                    (kb_x + kb_w, kb_y + kb_h),
+                        cv2.rectangle(frame,
+                                    (bx, by),
+                                    (bx + btn_w, by + btn_h),
                                     MEDIUM_GREEN, thickness=2)
-
-                        # Current input at top
-                        cv2.putText(frame, overlay_data.get("marker_name", ""),
-                                    (kb_x + 10, kb_y + 40),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, WHITE, 2, cv2.LINE_AA)
-
-                        # 4×4 grid buttons: numbers, dot, C, OK
-                        buttons = [
-                            ("1", kb_x + 10,  kb_y + 70),
-                            ("2", kb_x + 80,  kb_y + 70),
-                            ("3", kb_x + 150, kb_y + 70),
-                            ("4", kb_x + 10,  kb_y + 140),
-                            ("5", kb_x + 80,  kb_y + 140),
-                            ("6", kb_x + 150, kb_y + 140),
-                            ("7", kb_x + 10,  kb_y + 210),
-                            ("8", kb_x + 80,  kb_y + 210),
-                            ("9", kb_x + 150, kb_y + 210),
-                            (".", kb_x + 10,  kb_y + 280),
-                            ("0", kb_x + 80,  kb_y + 280),
-                            ("C", kb_x + 150, kb_y + 280),
-                            ("OK", kb_x + 220, kb_y + 280),
-                        ]
-                        btn_w, btn_h = 60, 50
-
-                        for txt, bx, by in buttons:
-                            # Draw button background & border
-                            cv2.rectangle(frame,
-                                        (bx, by),
-                                        (bx + btn_w, by + btn_h),
-                                        DARK_GREEN, thickness=-1)
-                            cv2.rectangle(frame,
-                                        (bx, by),
-                                        (bx + btn_w, by + btn_h),
-                                        MEDIUM_GREEN, thickness=2)
-
-                            # Center the text
-                            (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
-                            tx = bx + (btn_w - tw) // 2
-                            ty = by + (btn_h + th) // 2
-                            cv2.putText(frame, txt, (tx, ty),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
-    
-
+                        # Center the text
+                        (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+                        tx = bx + (btn_w - tw) // 2
+                        ty = by + (btn_h + th) // 2
+                        cv2.putText(frame, txt, (tx, ty),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
                 # ===========================
                 # MAIN MENU (when overlay_data["menu_flag"] == 1)
                 # ===========================
@@ -1493,11 +1541,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:3333/")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.31:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:3333/")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.33:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.31:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.33:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
