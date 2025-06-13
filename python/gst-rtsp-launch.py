@@ -803,25 +803,39 @@ class StreamServer:
 
                 # BUTTON 1
                 cv2.rectangle(frame,
-                              (button1_top_left_x, button1_top_left_y),
-                              (button1_top_left_x + rect_width, button1_top_left_y + rect_height),
-                              DARK_TURQUOISE, thickness=-1)
+                            (button1_top_left_x, button1_top_left_y),
+                            (button1_top_left_x + rect_width, button1_top_left_y + rect_height),
+                            DARK_TURQUOISE, thickness=-1)
                 cv2.rectangle(frame,
-                              (button1_top_left_x, button1_top_left_y),
-                              (button1_top_left_x + rect_width, button1_top_left_y + rect_height),
-                              MEDIUM_TURQUOISE, thickness=2)
+                            (button1_top_left_x, button1_top_left_y),
+                            (button1_top_left_x + rect_width, button1_top_left_y + rect_height),
+                            MEDIUM_TURQUOISE, thickness=2)
+                # Add "D" text to Button 1
+                text = "D"
+                (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                tx = button1_top_left_x + (rect_width - tw) // 2
+                ty = button1_top_left_y + (rect_height + th) // 2
+                cv2.putText(frame, text, (tx, ty),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
 
                 # BUTTON 2 (to the right of Button 1)
                 button2_top_left_x = button1_top_left_x + rect_width + horizontal_spacing
                 button2_top_left_y = button1_top_left_y
                 cv2.rectangle(frame,
-                              (button2_top_left_x, button2_top_left_y),
-                              (button2_top_left_x + rect_width, button2_top_left_y + rect_height),
-                              DARK_TURQUOISE, thickness=-1)
+                            (button2_top_left_x, button2_top_left_y),
+                            (button2_top_left_x + rect_width, button2_top_left_y + rect_height),
+                            DARK_TURQUOISE, thickness=-1)
                 cv2.rectangle(frame,
-                              (button2_top_left_x, button2_top_left_y),
-                              (button2_top_left_x + rect_width, button2_top_left_y + rect_height),
-                              MEDIUM_TURQUOISE, thickness=2)
+                            (button2_top_left_x, button2_top_left_y),
+                            (button2_top_left_x + rect_width, button2_top_left_y + rect_height),
+                            MEDIUM_TURQUOISE, thickness=2)
+                # Add "NC" text to Button 2
+                text = "NC"
+                (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                tx = button2_top_left_x + (rect_width - tw) // 2
+                ty = button2_top_left_y + (rect_height + th) // 2
+                cv2.putText(frame, text, (tx, ty),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
 
                 # BUTTON 3 (NetCfg) further to the right
                 button3_w = rect_width + 40
@@ -829,22 +843,21 @@ class StreamServer:
                 button3_x = button2_top_left_x + rect_width + horizontal_spacing
                 button3_y = button1_top_left_y
                 cv2.rectangle(frame,
-                              (button3_x, button3_y),
-                              (button3_x + button3_w, button3_y + button3_h),
-                              DARK_TURQUOISE, thickness=-1)
+                            (button3_x, button3_y),
+                            (button3_x + button3_w, button3_y + button3_h),
+                            DARK_TURQUOISE, thickness=-1)
                 cv2.rectangle(frame,
-                              (button3_x, button3_y),
-                              (button3_x + button3_w, button3_y + button3_h),
-                              MEDIUM_TURQUOISE, thickness=2)
+                            (button3_x, button3_y),
+                            (button3_x + button3_w, button3_y + button3_h),
+                            MEDIUM_TURQUOISE, thickness=2)
                 text = "NetCfg"
                 (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
                 tx = button3_x + (button3_w - tw) // 2
                 ty = button3_y + (button3_h + th) // 2
                 cv2.putText(frame, text, (tx, ty),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
-                
-                # BUTTON  4 PRESET
-                
+
+                # BUTTON 4 PRESET
                 button4_w, button4_h = rect_width + 60, rect_height
                 button4_x = button3_x + button3_w + horizontal_spacing
                 button4_y = button1_top_left_y
@@ -1541,11 +1554,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:3333/")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.31:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.21:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.31:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.21:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
