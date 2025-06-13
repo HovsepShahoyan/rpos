@@ -1472,7 +1472,7 @@ class StreamServer:
 
             # Ignore most of the parameters
             log.info("Test camera ignored most of the parameters")
-            launch_str = '( rtspsrc location=rtsp://admin:Aragats777@192.168.0.31:3333/stream latency=0 ! rtph264depay ! h264parse config-interval=1 ! rtph264pay name=pay0 pt=96'
+            launch_str = '( rtspsrc location=rtsp://admin:Aragats777@192.168.0.21:3333/stream latency=0 ! rtph264depay ! h264parse config-interval=1 ! rtph264pay name=pay0 pt=96'
             launch_str = launch_str + ' ! clockoverlay '
 
             # Completing the pipe
@@ -1491,7 +1491,7 @@ class StreamServer:
             # Ignore most of the parameters
             log.info("Test camera ignored most of the parameters")
 
-            launch_str = '( rtspsrc location=rtsp://192.168.0.31:554/ latency=0 ! rtph264depay ! h264parse '
+            launch_str = '( rtspsrc location=rtsp://192.168.0.21:554/ latency=0 ! rtph264depay ! h264parse '
             launch_str = launch_str + ' ! gdkpixbufoverlay location="' + self.device + '" overlay-width=' + str(self.width) + ' overlay-height=' + str(self.height) + ' '
             launch_str = launch_str + ' ! clockoverlay '
 

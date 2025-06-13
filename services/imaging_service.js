@@ -25,6 +25,7 @@ var ImagingService = (function (_super) {
         var _this = _super.call(this, config, server) || this;
         _this.brightness = 0;
         _this.contrast = 0;
+        _this.colorSaturation = 0;
         _this.autoFocusMode = '';
         _this.focusNearLimit = 0;
         _this.focusFarLimit = 0;
@@ -40,6 +41,7 @@ var ImagingService = (function (_super) {
         };
         _this.brightness = 50;
         _this.contrast = 50;
+        _this.colorSaturation = 0;
         _this.autoFocusMode = "MANUAL";
         _this.focusDefaultSpeed = 0.5;
         _this.focusNearLimit = 1.0;
@@ -65,6 +67,10 @@ var ImagingService = (function (_super) {
             var GetOptionsResponse = {
                 ImagingOptions: {
                     Brightness: {
+                        Min: 0,
+                        Max: 100
+                    },
+                    ColorSaturation: {
                         Min: 0,
                         Max: 100
                     },
@@ -95,6 +101,7 @@ var ImagingService = (function (_super) {
                 var GetImagingSettingsResponse = {
                     ImagingSettings: {
                         Brightness: _this.brightness,
+                        ColorSaturation: _this.saturation,
                         Contrast: _this.contrast,
                         Focus: {
                             AutoFocusMode: _this.autoFocusMode,
@@ -113,10 +120,17 @@ var ImagingService = (function (_super) {
         function myCustomContrastFunction(contrast) {
  		 console.log('[Custom Function] Adjusting contrast to:', contrast);
 	    }
+        function myCustomSaturation(colorSaturation) {
+            console.log('[Custom Function] Adjusting Negative/Positive to ', colorSaturation)
+        }
         port.SetImagingSettings = function (args) {
             var SetImagingSettingsResponse = {};
             console.log('====== SetImagingSettings triggered ======');
             console.log(JSON.stringify(args, null, 2));
+            console.log(
+            'keys in ImagingSettings:',
+            Object.keys(args.ImagingSettings || {})
+            );
             if (args.ImagingSettings) {
                 if (args.ImagingSettings.Contrast) {
 		     myCustomContrastFunction(_this.contrast);
@@ -127,6 +141,15 @@ var ImagingService = (function (_super) {
                     _this.brightness = args.ImagingSettings.Brightness;
                     console.log('Brightness received:', args.ImagingSettings.Brightness);
                     CommandClient.setBrightness(args.ImagingSettings.Brightness);
+            myCustomSaturation(_this.colorSaturation);
+                    _this.colorSaturation = args.ImagingSettings.ColorSaturation;
+                    console.log('Saturation received:', args.ImagingSettings.ColorSaturation);
+                    if (args.ImagingSettings.ColorSaturation == 0) {
+                        CommandClient.setWhiteHot(args.ImagingSettings.ColorSaturation);
+                    }
+                    else {
+                        CommandClient.setBlackHot(args.ImagingSettings.ColorSaturation);
+                    }
                 }                
                 if (args.ImagingSettings.Focus) {
                     if (args.ImagingSettings.Focus.AutoFocusMode) {

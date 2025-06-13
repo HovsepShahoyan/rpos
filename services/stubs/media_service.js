@@ -75,8 +75,8 @@ exports.MediaService = {
 
       GetStreamUri: function(args) {
         const uris = {
-          "Profile_1": "rtsp://admin:Aragats777@192.168.0.31:3333/stream",
-          "Profile_2": "rtsp://admin:Aragats777@192.168.0.31:1111/"
+          "Profile_1": "rtsp://admin:Aragats777@192.168.0.21:3333/stream",
+          "Profile_2": "rtsp://admin:Aragats777@192.168.0.21:1111/"
         };
         return {
           MediaUri: {
