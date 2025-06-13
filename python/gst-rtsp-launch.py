@@ -401,7 +401,7 @@ class StreamServer:
                         # Initialize marker_name when add_marker_flag is set
                         if overlay_data["add_marker_flag"] == 1:
                             overlay_data["marker_name"] = ""
-                        log.debug(f"[DEBUG] Loaded presets.json → add_marker_flag={overlay_data['add_marker_flag']}")
+                        #log.debug(f"[DEBUG] Loaded presets.json → add_marker_flag={overlay_data['add_marker_flag']}")
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to read presets: {e}")
 
