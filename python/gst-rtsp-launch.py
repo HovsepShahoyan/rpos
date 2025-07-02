@@ -332,6 +332,7 @@ class StreamServer:
         network_input_path = "/tmp/network_numpad.json"
         presets_path     = "/tmp/presets.json"
         presets_numpad_path = "/tmp/presets_numpad.json"
+        screenshot_path = "/tmp/screenshots/screenshot_flag.json"
         log.debug(f"[DEBUG] Overlay data paths: {coords_path}, {gps_path}, {angles_path}, {hyusis_path}")
 
         # Initialize overlay data
@@ -367,6 +368,7 @@ class StreamServer:
             "current_preset_index": 0,     # 0–9
             "marker_name":       "",
             "markers":           [""] * 10,
+            "screenshot_flag": 0,
         }
 
         log.debug(f"[DEBUG] Initialized overlay data: {overlay_data}")
@@ -387,6 +389,14 @@ class StreamServer:
             last_network_mtime = 0
             while True:
                 # Check menu flag file
+
+                try:
+                    if os.path.exists(screenshot_path):
+                        with open(screenshot_path, "r") as f:
+                            shot = json.load(f)
+                            overlay_data["screenshot_flag"] = int(shot.get("screenshot_flag", 0))
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read screenshot flag: {e}")
 
                 # Inside file_watcher() while loop:
                 try:
@@ -628,6 +638,22 @@ class StreamServer:
                     # log.info(f"[INFO] Estimated FPS: {fps_estimate:.2f}")
                     processing_times.pop(0)
 
+
+                # === ✅ TAKE SCREENSHOT OF ORIGINAL FRAME BEFORE ANY DRAWING ===
+                if overlay_data.get("screenshot_flag", 0) == 1:
+                    try:
+                        timestamp = time.strftime("%Y%m%d_%H%M%S")
+                        filename = f"/tmp/screenshot_{timestamp}.png"
+                        raw_bgr = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+                        cv2.imwrite(filename, raw_bgr)
+                        log.info(f"[Screenshot] Saved raw frame: {filename}")
+                    except Exception as e:
+                        log.warning(f"[Screenshot] Failed to save screenshot: {e}")
+                    finally:
+                        overlay_data["screenshot_flag"] = 0
+                        with open(screenshot_path, "w") as f:
+                            json.dump({"screenshot_flag": 0}, f)
+
                 # Apply overlay if available
                 if overlay is not None:
                     h, w = frame.shape[:2]
@@ -777,8 +803,8 @@ class StreamServer:
                             cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
 
                 angle_label = (
-                    f"AngleD: {overlay_data['az_a']} ({overlay_data['az_d_s']}°)   "
-                    f"MestoC: {overlay_data['el_a']} ({overlay_data['el_d_s']}°)"
+                    f"AngleD: {overlay_data['az_a']} ({overlay_data['az_d_s']})   "
+                    f"MestoC: {overlay_data['el_a']} ({overlay_data['el_d_s']})"
                 )
                 cv2.putText(frame, angle_label, (w // 2 - 200, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
@@ -800,6 +826,25 @@ class StreamServer:
                 # Shift entire button group 400px to the left
                 button1_top_left_x = (w - rect_width) // 2 - 400
                 button1_top_left_y = h - rect_height - bottom_offset
+
+                # BUTTON 0 - Screenshot (Left of Button 1)
+                button0_w, button0_h = rect_width + 100, rect_height
+                button0_x = button1_top_left_x - horizontal_spacing - button0_w
+                button0_y = button1_top_left_y
+                cv2.rectangle(frame,
+                            (button0_x, button0_y),
+                            (button0_x + button0_w, button0_y + button0_h),
+                            DARK_TURQUOISE, thickness=-1)
+                cv2.rectangle(frame,
+                            (button0_x, button0_y),
+                            (button0_x + button0_w, button0_y + button0_h),
+                            MEDIUM_TURQUOISE, thickness=2)
+                text = "Screenshot"
+                (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                tx = button0_x + (button0_w - tw) // 2
+                ty = button0_y + (button0_h + th) // 2
+                cv2.putText(frame, text, (tx, ty),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
 
                 # BUTTON 1
                 cv2.rectangle(frame,
@@ -876,6 +921,20 @@ class StreamServer:
                 cv2.putText(frame, text, (tx, ty),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
                 
+                # if overlay_data.get("screenshot_flag", 0) == 1:
+                #     try:
+                #         # Save the current frame
+                #         timestamp = time.strftime("%Y%m%d_%H%M%S")
+                #         filename = f"/tmp/screenshot_{timestamp}.png"
+                #         cv2.imwrite(filename, frame)
+                #         log.info(f"[Screenshot] Saved screenshot: {filename}")
+                #     except Exception as e:
+                #         log.warning(f"[Screenshot] Failed to save screenshot: {e}")
+                #     finally:
+                #         # Clear the screenshot flag so it doesn't trigger again every frame
+                #         overlay_data["screenshot_flag"] = 0
+                #         with open(screenshot_path, "w") as f:
+                #             json.dump({"screenshot_flag": 0}, f)
 
                 if overlay_data.get("presets_flag", 0) == 1:
                     # Panel dimensions & position
@@ -1554,11 +1613,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.21:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:3333/")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.31:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.21:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.31:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
