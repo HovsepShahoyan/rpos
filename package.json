@@ -18,6 +18,7 @@
     "url": "https://github.com/Breeeze/rpos.git"
   },
   "dependencies": {
+    "archiver": "^5.3.2",
     "body-parser": "^1.20.0",
     "cli-color": "2.0.0",
     "express": "^4.17.1",

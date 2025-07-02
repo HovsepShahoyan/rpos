@@ -332,7 +332,7 @@ class StreamServer:
         network_input_path = "/tmp/network_numpad.json"
         presets_path     = "/tmp/presets.json"
         presets_numpad_path = "/tmp/presets_numpad.json"
-        screenshot_path = "/tmp/screenshots/screenshot_flag.json"
+        screenshot_path = "/tmp/screenshot_flag.json"
         log.debug(f"[DEBUG] Overlay data paths: {coords_path}, {gps_path}, {angles_path}, {hyusis_path}")
 
         # Initialize overlay data
@@ -637,22 +637,6 @@ class StreamServer:
                     fps_estimate = 1 / avg_pt
                     # log.info(f"[INFO] Estimated FPS: {fps_estimate:.2f}")
                     processing_times.pop(0)
-
-
-                # === ✅ TAKE SCREENSHOT OF ORIGINAL FRAME BEFORE ANY DRAWING ===
-                if overlay_data.get("screenshot_flag", 0) == 1:
-                    try:
-                        timestamp = time.strftime("%Y%m%d_%H%M%S")
-                        filename = f"/tmp/screenshot_{timestamp}.png"
-                        raw_bgr = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-                        cv2.imwrite(filename, raw_bgr)
-                        log.info(f"[Screenshot] Saved raw frame: {filename}")
-                    except Exception as e:
-                        log.warning(f"[Screenshot] Failed to save screenshot: {e}")
-                    finally:
-                        overlay_data["screenshot_flag"] = 0
-                        with open(screenshot_path, "w") as f:
-                            json.dump({"screenshot_flag": 0}, f)
 
                 # Apply overlay if available
                 if overlay is not None:
@@ -1379,6 +1363,22 @@ class StreamServer:
                             cv2.putText(frame, txt, (tx, ty),
                                         cv2.FONT_HERSHEY_SIMPLEX,
                                         0.8, WHITE, 2, cv2.LINE_AA)
+                            
+                #6 TAKE SCREENSHOT OF CURRENT FRAME AFTER OVERLAYS
+                if overlay_data.get("screenshot_flag", 0) == 1:
+                    try:
+                        timestamp = time.strftime("%Y%m%d_%H%M%S")
+                        filename = f"/tmp/screenshot_{timestamp}.png"
+                        raw_bgr = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+                        cv2.imwrite(filename, raw_bgr)
+                        log.info(f"[Screenshot] Saved raw frame: {filename}")
+                    except Exception as e:
+                        log.warning(f"[Screenshot] Failed to save screenshot: {e}")
+                    finally:
+                        overlay_data["screenshot_flag"] = 0
+                        with open(screenshot_path, "w") as f:
+                            json.dump({"screenshot_flag": 0}, f)
+
 
 
                 ################## END OF BUTTONS / MENUS ###########################
