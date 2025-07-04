@@ -676,17 +676,62 @@ class StreamServer:
                     x2 = min(w, x1c + ow)
                     y2 = min(h, y1c + oh)
 
-                    if x2 > x1c and y2 > y1c:
-                        crop = overlay[0:(y2 - y1c), 0:(x2 - x1c)]
-                        alpha = crop[:, :, 3] / 255.0
-                        for c in range(3):
-                            frame[y1c:y2, x1c:x2, c] = (
-                                alpha * crop[:, :, c] +
-                                (1 - alpha) * frame[y1c:y2, x1c:x2, c]
-                            )
+                    # if x2 > x1c and y2 > y1c:
+                    #     crop = overlay[0:(y2 - y1c), 0:(x2 - x1c)]
+                    #     alpha = crop[:, :, 3] / 255.0
+                    #     for c in range(3):
+                    #         frame[y1c:y2, x1c:x2, c] = (
+                    #             alpha * crop[:, :, c] +
+                    #             (1 - alpha) * frame[y1c:y2, x1c:x2, c]
+                    #         )
 
                 # ... rest of the code remains the same ...
                 # Draw text overlays with improved efficiency
+
+                # --- Digital Zoom: Read and update from /tmp/digital_zoom.json, handle zoom_in_flag/zoom_out_flag ---
+                digital_zoom_path = "/tmp/digital_zoom.json"
+                digital_zoom = 1.0
+                zoom_changed = False
+                try:
+                    dz_data = {"zoom": 1.0, "zoom_in_flag": 0, "zoom_out_flag": 0}
+                    if os.path.exists(digital_zoom_path):
+                        with open(digital_zoom_path, "r") as f:
+                            dz_data = json.load(f)
+                    digital_zoom = float(dz_data.get("zoom", 1.0))
+                    zoom_in_flag = int(dz_data.get("zoom_in_flag", 0))
+                    zoom_out_flag = int(dz_data.get("zoom_out_flag", 0))
+                    # Handle zoom in/out flags
+                    if zoom_in_flag == 1:
+                        digital_zoom = min(8.0, digital_zoom + 0.2)
+                        dz_data["zoom_in_flag"] = 0
+                        dz_data["zoom"] = digital_zoom
+                        zoom_changed = True
+                    if zoom_out_flag == 1:
+                        digital_zoom = max(1.0, digital_zoom - 0.2)
+                        dz_data["zoom_out_flag"] = 0
+                        dz_data["zoom"] = digital_zoom
+                        zoom_changed = True
+                    if zoom_changed:
+                        with open(digital_zoom_path, "w") as f:
+                            json.dump(dz_data, f)
+                except Exception as e:
+                    log.warning(f"[DigitalZoom] Failed to read/update digital zoom: {e}")
+                    digital_zoom = 1.0
+
+                # --- Digital Zoom: Apply zoom centered on cross position (before overlays) ---
+                h, w = frame.shape[:2]
+                if digital_zoom > 1.01:
+                    cx = overlay_data["x"] if overlay_data["x"] is not None else w // 2
+                    cy = overlay_data["y"] if overlay_data["y"] is not None else h // 2
+                    crop_w = int(w / digital_zoom)
+                    crop_h = int(h / digital_zoom)
+                    x1 = max(0, min(w - crop_w, cx - crop_w // 2))
+                    y1 = max(0, min(h - crop_h, cy - crop_h // 2))
+                    x2 = x1 + crop_w
+                    y2 = y1 + crop_h
+                    cropped = frame[y1:y2, x1:x2]
+                    frame = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
+
 
                 h, w = frame.shape[:2]
 
@@ -810,6 +855,98 @@ class StreamServer:
                 # Shift entire button group 400px to the left
                 button1_top_left_x = (w - rect_width) // 2 - 400
                 button1_top_left_y = h - rect_height - bottom_offset
+
+                # --- Draw overlays (cross, UI, etc) after zoom ---
+                # Draw cross overlay at original size, not zoomed
+                if overlay is not None:
+                    h, w = frame.shape[:2]
+                    # Get crosshair coordinates from overlay_data (already zoomed)
+                    cx = overlay_data["x"] if overlay_data["x"] is not None else w // 2
+                    cy = overlay_data["y"] if overlay_data["y"] is not None else h // 2
+                    oh, ow = overlay.shape[:2]
+                    x1c = max(0, cx - ow // 2)
+                    y1c = max(0, cy - oh // 2)
+                    x2 = min(w, x1c + ow)
+                    y2 = min(h, y1c + oh)
+                    if x2 > x1c and y2 > y1c:
+                        crop = overlay[0:(y2 - y1c), 0:(x2 - x1c)]
+                        alpha = crop[:, :, 3] / 255.0
+                        for c in range(3):
+                            frame[y1c:y2, x1c:x2, c] = (
+                                alpha * crop[:, :, c] +
+                                (1 - alpha) * frame[y1c:y2, x1c:x2, c]
+                            )
+
+                # --- Digital Zoom: + and - buttons
+                # dz_btn_w, dz_btn_h = 60, 60
+                # dz_btn_x = 0
+                # dz_btn_y_center = h // 2
+                # dz_btn_spacing = 20
+                # dz_minus_y = dz_btn_y_center - dz_btn_h - dz_btn_spacing // 2
+                # dz_plus_y  = dz_btn_y_center + dz_btn_spacing // 2
+                # cv2.rectangle(frame, (dz_btn_x, dz_minus_y), (dz_btn_x + dz_btn_w, dz_minus_y + dz_btn_h), MEDIUM_TURQUOISE, thickness=-1)
+                # cv2.rectangle(frame, (dz_btn_x, dz_minus_y), (dz_btn_x + dz_btn_w, dz_minus_y + dz_btn_h), MEDIUM_TURQUOISE, thickness=2)
+                # cv2.putText(frame, "-", (dz_btn_x + 9, dz_minus_y + 42), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 3, cv2.LINE_AA)
+                # cv2.rectangle(frame, (dz_btn_x, dz_plus_y), (dz_btn_x + dz_btn_w, dz_plus_y + dz_btn_h), MEDIUM_TURQUOISE, thickness=-1)
+                # cv2.rectangle(frame, (dz_btn_x, dz_plus_y), (dz_btn_x + dz_btn_w, dz_plus_y + dz_btn_h), MEDIUM_TURQUOISE, thickness=2)
+                # cv2.putText(frame, "+", (dz_btn_x + 9, dz_plus_y + 45), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 3, cv2.LINE_AA)
+                # cv2.putText(frame, f"x{digital_zoom:.2f}", (dz_btn_x, dz_btn_y_center), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255,255,255), 2, cv2.LINE_AA)
+
+                # --- Perfect centering + auto-scaled zoom text ---
+
+                dz_size    = 60
+                dz_spacing = 15
+                dz_x       = 20
+                frame_cy   = h // 2
+
+                minus_cy = frame_cy - dz_size - dz_spacing
+                zoom_cy  = frame_cy
+                plus_cy  = frame_cy + dz_size + dz_spacing
+
+                def draw_square_button(cx, cy, label, font_scale, font_thickness, text_color):
+                    x0 = cx
+                    y0 = int(cy - dz_size/2)
+                    x1 = x0 + dz_size
+                    y1 = y0 + dz_size
+
+                    # box
+                    cv2.rectangle(frame, (x0, y0), (x1, y1), DARK_TURQUOISE, -1)
+                    cv2.rectangle(frame, (x0, y0), (x1, y1), MEDIUM_TURQUOISE, 2)
+
+                    # size of text
+                    (tw, th), baseline = cv2.getTextSize(label,
+                                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                                        font_scale,
+                                                        font_thickness)
+                    # horizontal centering
+                    tx = x0 + (dz_size - tw)//2
+                    # vertical centering (subtract baseline so text isn't too low)
+                    ty = y0 + (dz_size + th)//2 - baseline//2
+
+                    cv2.putText(frame, label, (tx, ty),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                font_scale,
+                                text_color,
+                                font_thickness,
+                                cv2.LINE_AA)
+
+                # “–” and “+” with tight centering
+                draw_square_button(dz_x, minus_cy, "-",    font_scale=1.5, font_thickness=3, text_color=WHITE)
+                draw_square_button(dz_x, plus_cy,  "+",    font_scale=1.5, font_thickness=3, text_color=WHITE)
+
+                # Auto‑scale zoom label so it fits
+                zoom_label = f"x{digital_zoom:.2f}"
+                # start big and shrink if necessary
+                fs = 1.2
+                (thw, thh), _ = cv2.getTextSize(zoom_label, cv2.FONT_HERSHEY_SIMPLEX, fs, 3)
+                if thw > dz_size - 8:  # leave 4px padding each side
+                    fs = (dz_size - 8) / thw * fs
+
+                draw_square_button(dz_x, zoom_cy, zoom_label,
+                                font_scale=fs, font_thickness=3,
+                                text_color=(240,240,0))
+
+
 
                 # BUTTON 0 - Screenshot (Left of Button 1)
                 button0_w, button0_h = rect_width + 100, rect_height
@@ -943,7 +1080,7 @@ class StreamServer:
                                 MEDIUM_GREEN, thickness=-1)
                     cv2.putText(frame, "Add Marker",
                                 (panel_x + 20, add_btn_y + btn_h // 2 + 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2, cv2.LINE_AA)
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
                     # “Delete Marker” button
                     del_btn_y = add_btn_y + btn_h + 10
                     cv2.rectangle(frame,
@@ -952,7 +1089,7 @@ class StreamServer:
                                 MEDIUM_GREEN, thickness=-1)
                     cv2.putText(frame, "Delete Marker",
                                 (panel_x + 20, del_btn_y + btn_h // 2 + 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2, cv2.LINE_AA)
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
                     # List of 10 markers
                     slot_h = 30
                     slots_start_y = del_btn_y + btn_h + 30  # extra padding so list sits well below buttons
@@ -1311,34 +1448,359 @@ class StreamServer:
                                       (numpad_x + numpad_w, numpad_y + numpad_h),
                                       MEDIUM_GREEN, thickness=2)
 
-                        # Display active field’s current value (white text)
-                        act = overlay_data["active_network_field"]
-                        val = overlay_data.get(act, "")
-                        cv2.putText(frame, val,
+                        # Display active field’s current value at top (WHITE text on dark green)
+                        active_value = (
+                            overlay_data.get("field1_value", "0")
+                            if overlay_data.get("field1Flag", 0) == 1
+                            else overlay_data.get("field2_value", "0")
+                        )
+                        cv2.putText(frame, active_value,
                                     (numpad_x + 10, numpad_y + 40),
                                     cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
 
                         # Numpad buttons (4×4 grid, including “.”)
                         buttons = [
-                            ("1", numpad_x + 10,   numpad_y + 70),
-                            ("2", numpad_x + 80,   numpad_y + 70),
-                            ("3", numpad_x + 150,  numpad_y + 70),
-                            ("",  numpad_x + 220,  numpad_y + 70),
+                            ("1", numpad_x + 10,  numpad_y + 70),
+                            ("2", numpad_x + 80,  numpad_y + 70),
+                            ("3", numpad_x + 150, numpad_y + 70),
+                            ("",  numpad_x + 220, numpad_y + 70),
 
-                            ("4", numpad_x + 10,   numpad_y + 140),
-                            ("5", numpad_x + 80,   numpad_y + 140),
-                            ("6", numpad_x + 150,  numpad_y + 140),
-                            ("",  numpad_x + 220,  numpad_y + 140),
+                            ("4", numpad_x + 10,  numpad_y + 140),
+                            ("5", numpad_x + 80,  numpad_y + 140),
+                            ("6", numpad_x + 150, numpad_y + 140),
+                            ("",  numpad_x + 220, numpad_y + 140),
 
-                            ("7", numpad_x + 10,   numpad_y + 210),
-                            ("8", numpad_x + 80,   numpad_y + 210),
-                            ("9", numpad_x + 150,  numpad_y + 210),
-                            ("",  numpad_x + 220,  numpad_y + 210),
+                            ("7", numpad_x + 10,  numpad_y + 210),
+                            ("8", numpad_x + 80,  numpad_y + 210),
+                            ("9", numpad_x + 150, numpad_y + 210),
+                            ("",  numpad_x + 220, numpad_y + 210),
 
-                            (".",  numpad_x + 10,   numpad_y + 280),
-                            ("0",  numpad_x + 80,   numpad_y + 280),
-                            ("C",  numpad_x + 150,  numpad_y + 280),
-                            ("OK", numpad_x + 220,  numpad_y + 280),
+                            (".",  numpad_x + 10,  numpad_y + 280),
+                            ("0",  numpad_x + 80,  numpad_y + 280),
+                            ("C",  numpad_x + 150, numpad_y + 280),
+                            ("OK", numpad_x + 220, numpad_y + 280),
+                        ]
+
+                        btn_width  = 60
+                        btn_height = 50
+                        for txt, bx, by in buttons:
+                            if txt == "":
+                                continue
+                            cv2.rectangle(frame,
+                                          (bx, by),
+                                          (bx + btn_width, by + btn_height),
+                                          DARK_GREEN, thickness=-1)
+                            cv2.rectangle(frame,
+                                          (bx, by),
+                                          (bx + btn_width, by + btn_height),
+                                          MEDIUM_GREEN, thickness=2)
+
+                            # Text centered in button (WHITE)
+                            (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+                            text_x = bx + (btn_width - tw) // 2
+                            text_y = by + (btn_height + th) // 2
+                            cv2.putText(frame, txt, (text_x, text_y),
+                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.8, WHITE, 2, cv2.LINE_AA)
+
+                # ===========================
+                # NETWORK CONFIG (Green Theme) – Revert Numpad to “Menu” Style, Panel Above Numpad
+                # ===========================
+                if overlay_data.get("network_flag", 0) == 1:
+                    # 1) Draw panel near top so it sits entirely above the centered numpad
+                    net_w = 500
+                    net_h = 300
+                    margin_top = 50
+                    margin_left = (w - net_w) // 2
+
+                    # Panel background (white) and border (medium green)
+                    cv2.rectangle(frame,
+                                  (margin_left, margin_top),
+                                  (margin_left + net_w, margin_top + net_h),
+                                  WHITE, thickness=-1)
+                    cv2.rectangle(frame,
+                                  (margin_left, margin_top),
+                                  (margin_left + net_w, margin_top + net_h),
+                                  MEDIUM_GREEN, thickness=3)
+
+                    # 2) Position labels and input boxes
+                    x0 = margin_left + 40    # label start
+                    box_h = 40
+                    # Space fields evenly so they fit comfortably in 300px height
+                    y_start = margin_top + 30
+
+                    labels = ["IP Address:", "Subnet Mask:", "Gateway:", "DNS 1:", "DNS 2:"]
+                    keys   = ["ip_address",   "subnet_mask",   "gateway",  "DNS1",   "DNS2"]
+                    field_boxes = {}
+
+                    for i, (lbl, key) in enumerate(zip(labels, keys)):
+                        y0 = y_start + i * (box_h + 10)  # row‐height = 50px
+
+                        # Draw label (black)
+                        cv2.putText(frame, lbl,
+                                    (x0, y0 + box_h // 2 + 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2, cv2.LINE_AA)
+
+                        # Compute box coords (wider fields so IP fits)
+                        bx0 = x0 + 160
+                        by0 = y0
+                        bx1 = margin_left + net_w - 20   # 20px right padding
+                        by1 = by0 + box_h
+
+                        # Draw input‐box (green if active, gray otherwise)
+                        is_act = (overlay_data.get("active_network_field") == key)
+                        col   = MEDIUM_GREEN if is_act else (200, 200, 200)
+                        field_boxes[key] = (bx0, by0, bx1, by1)
+
+                       
+
+                        cv2.rectangle(frame, (bx0, by0), (bx1, by1), col, thickness=-1)
+                        cv2.rectangle(frame, (bx0, by0), (bx1, by1), BLACK, thickness=2)
+
+                        # Draw current value (red)
+                        cur_txt = overlay_data.get(key, "")
+                        cv2.putText(frame, cur_txt,
+                                    (bx0 + 10, by0 + box_h // 2 + 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, DARK_TURQUOISE, 2, cv2.LINE_AA)
+
+                    # 3) Add “Set” button inside panel, below last field
+                    btn_w = 100
+                    btn_h = 40
+                    # Position “Set” 20px below the last field (DNS2 ends at y = y_start + 4*50 + 40 = margin_top+30+200+40=margin_top+270)
+                    btn_x = margin_left + net_w - btn_w - 20     # 20px right padding
+                    btn_y = margin_top + 270 + 20                # 20px below DNS2
+                    cv2.rectangle(frame,
+                                  (btn_x, btn_y),
+                                  (btn_x + btn_w, btn_y + btn_h),
+                                  MEDIUM_GREEN, thickness=-1)
+                    cv2.rectangle(frame,
+                                  (btn_x, btn_y),
+                                  (btn_x + btn_w, btn_y + btn_h),
+                                  DARK_GREEN, thickness=2)
+                    text = "Set"
+                    (tw, th), _ = cv2.getTextSize(text,
+                                                  cv2.FONT_HERSHEY_SIMPLEX,
+                                                  0.8, 2)
+                    text_x = btn_x + (btn_w - tw) // 2
+                    text_y = btn_y + (btn_h + th) // 2
+                    cv2.putText(frame, text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
+
+                    # 4) Draw network‐numpad exactly as menu‐numpad (centered), so it no longer overlaps the panel
+                    if overlay_data.get("numpad_flag", 0) == 1 and overlay_data.get("active_network_field"):
+                        # Semi‐transparent overlay
+                        overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
+                        overlay_alpha[:] = BLACK
+                        alpha = 0.6
+                        #cv2.addWeighted(overlay_alpha, alpha, frame, 1 - alpha, 0, frame)
+
+                        # Centered numpad (same as menu)
+                        numpad_w = 300
+                        numpad_h = 360
+                        numpad_x = (w - numpad_w) // 2
+                        numpad_y = (h - numpad_h) // 2 + 40
+
+                        # Background & border (green theme)
+                        cv2.rectangle(frame,
+                                      (numpad_x, numpad_y),
+                                      (numpad_x + numpad_w, numpad_y + numpad_h),
+                                      DARK_GREEN, thickness=-1)
+                        cv2.rectangle(frame,
+                                      (numpad_x, numpad_y),
+                                      (numpad_x + numpad_w, numpad_y + numpad_h),
+                                      MEDIUM_GREEN, thickness=2)
+
+                        # Display active field’s current value at top (WHITE text on dark green)
+                        active_value = (
+                            overlay_data.get("field1_value", "0")
+                            if overlay_data.get("field1Flag", 0) == 1
+                            else overlay_data.get("field2_value", "0")
+                        )
+                        cv2.putText(frame, active_value,
+                                    (numpad_x + 10, numpad_y + 40),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
+
+                        # Numpad buttons (4×4 grid, including “.”)
+                        buttons = [
+                            ("1", numpad_x + 10,  numpad_y + 70),
+                            ("2", numpad_x + 80,  numpad_y + 70),
+                            ("3", numpad_x + 150, numpad_y + 70),
+                            ("",  numpad_x + 220, numpad_y + 70),
+
+                            ("4", numpad_x + 10,  numpad_y + 140),
+                            ("5", numpad_x + 80,  numpad_y + 140),
+                            ("6", numpad_x + 150, numpad_y + 140),
+                            ("",  numpad_x + 220, numpad_y + 140),
+
+                            ("7", numpad_x + 10,  numpad_y + 210),
+                            ("8", numpad_x + 80,  numpad_y + 210),
+                            ("9", numpad_x + 150, numpad_y + 210),
+                            ("",  numpad_x + 220, numpad_y + 210),
+
+                            (".",  numpad_x + 10,  numpad_y + 280),
+                            ("0",  numpad_x + 80,  numpad_y + 280),
+                            ("C",  numpad_x + 150, numpad_y + 280),
+                            ("OK", numpad_x + 220, numpad_y + 280),
+                        ]
+
+                        btn_width  = 60
+                        btn_height = 50
+                        for txt, bx, by in buttons:
+                            if txt == "":
+                                continue
+                            cv2.rectangle(frame,
+                                          (bx, by),
+                                          (bx + btn_width, by + btn_height),
+                                          DARK_GREEN, thickness=-1)
+                            cv2.rectangle(frame,
+                                          (bx, by),
+                                          (bx + btn_width, by + btn_height),
+                                          MEDIUM_GREEN, thickness=2)
+
+                            # Text centered in button (WHITE)
+                            (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+                            text_x = bx + (btn_width - tw) // 2
+                            text_y = by + (btn_height + th) // 2
+                            cv2.putText(frame, txt, (text_x, text_y),
+                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.8, WHITE, 2, cv2.LINE_AA)
+
+                # ===========================
+                # NETWORK CONFIG (Green Theme) – Revert Numpad to “Menu” Style, Panel Above Numpad
+                # ===========================
+                if overlay_data.get("network_flag", 0) == 1:
+                    # 1) Draw panel near top so it sits entirely above the centered numpad
+                    net_w = 500
+                    net_h = 300
+                    margin_top = 50
+                    margin_left = (w - net_w) // 2
+
+                    # Panel background (white) and border (medium green)
+                    cv2.rectangle(frame,
+                                  (margin_left, margin_top),
+                                  (margin_left + net_w, margin_top + net_h),
+                                  WHITE, thickness=-1)
+                    cv2.rectangle(frame,
+                                  (margin_left, margin_top),
+                                  (margin_left + net_w, margin_top + net_h),
+                                  MEDIUM_GREEN, thickness=3)
+
+                    # 2) Position labels and input boxes
+                    x0 = margin_left + 40    # label start
+                    box_h = 40
+                    # Space fields evenly so they fit comfortably in 300px height
+                    y_start = margin_top + 30
+
+                    labels = ["IP Address:", "Subnet Mask:", "Gateway:", "DNS 1:", "DNS 2:"]
+                    keys   = ["ip_address",   "subnet_mask",   "gateway",  "DNS1",   "DNS2"]
+                    field_boxes = {}
+
+                    for i, (lbl, key) in enumerate(zip(labels, keys)):
+                        y0 = y_start + i * (box_h + 10)  # row‐height = 50px
+
+                        # Draw label (black)
+                        cv2.putText(frame, lbl,
+                                    (x0, y0 + box_h // 2 + 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2, cv2.LINE_AA)
+
+                        # Compute box coords (wider fields so IP fits)
+                        bx0 = x0 + 160
+                        by0 = y0
+                        bx1 = margin_left + net_w - 20   # 20px right padding
+                        by1 = by0 + box_h
+
+                        # Draw input‐box (green if active, gray otherwise)
+                        is_act = (overlay_data.get("active_network_field") == key)
+                        col   = MEDIUM_GREEN if is_act else (200, 200, 200)
+                        field_boxes[key] = (bx0, by0, bx1, by1)
+
+                        cv2.rectangle(frame, (bx0, by0), (bx1, by1), col, thickness=-1)
+                        cv2.rectangle(frame, (bx0, by0), (bx1, by1), BLACK, thickness=2)
+
+                        # Draw current value (red)
+                        cur_txt = overlay_data.get(key, "")
+                        cv2.putText(frame, cur_txt,
+                                    (bx0 + 10, by0 + box_h // 2 + 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, DARK_TURQUOISE, 2, cv2.LINE_AA)
+
+                    # 3) Add “Set” button inside panel, below last field
+                    btn_w = 100
+                    btn_h = 40
+                    # Position “Set” 20px below the last field (DNS2 ends at y = y_start + 4*50 + 40 = margin_top+30+200+40=margin_top+270)
+                    btn_x = margin_left + net_w - btn_w - 20     # 20px right padding
+                    btn_y = margin_top + 270 + 20                # 20px below DNS2
+                    cv2.rectangle(frame,
+                                  (btn_x, btn_y),
+                                  (btn_x + btn_w, btn_y + btn_h),
+                                  MEDIUM_GREEN, thickness=-1)
+                    cv2.rectangle(frame,
+                                  (btn_x, btn_y),
+                                  (btn_x + btn_w, btn_y + btn_h),
+                                  DARK_GREEN, thickness=2)
+                    text = "Set"
+                    (tw, th), _ = cv2.getTextSize(text,
+                                                  cv2.FONT_HERSHEY_SIMPLEX,
+                                                  0.8, 2)
+                    text_x = btn_x + (btn_w - tw) // 2
+                    text_y = btn_y + (btn_h + th) // 2
+                    cv2.putText(frame, text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
+
+                    # 4) Draw network‐numpad exactly as menu‐numpad (centered), so it no longer overlaps the panel
+                    if overlay_data.get("numpad_flag", 0) == 1 and overlay_data.get("active_network_field"):
+                        # Semi‐transparent overlay
+                        overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
+                        overlay_alpha[:] = BLACK
+                        alpha = 0.6
+                        #cv2.addWeighted(overlay_alpha, alpha, frame, 1 - alpha, 0, frame)
+
+                        # Centered numpad (same as menu)
+                        numpad_w = 300
+                        numpad_h = 360
+                        numpad_x = (w - numpad_w) // 2
+                        numpad_y = (h - numpad_h) // 2 + 40
+
+                        # Background & border (green theme)
+                        cv2.rectangle(frame,
+                                      (numpad_x, numpad_y),
+                                      (numpad_x + numpad_w, numpad_y + numpad_h),
+                                      DARK_GREEN, thickness=-1)
+                        cv2.rectangle(frame,
+                                      (numpad_x, numpad_y),
+                                      (numpad_x + numpad_w, numpad_y + numpad_h),
+                                      MEDIUM_GREEN, thickness=2)
+
+                        # Display active field’s current value at top (WHITE text on dark green)
+                        active_value = (
+                            overlay_data.get("field1_value", "0")
+                            if overlay_data.get("field1Flag", 0) == 1
+                            else overlay_data.get("field2_value", "0")
+                        )
+                        cv2.putText(frame, active_value,
+                                    (numpad_x + 10, numpad_y + 40),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
+
+                        # Numpad buttons (4×4 grid, including “.”)
+                        buttons = [
+                            ("1", numpad_x + 10,  numpad_y + 70),
+                            ("2", numpad_x + 80,  numpad_y + 70),
+                            ("3", numpad_x + 150, numpad_y + 70),
+                            ("",  numpad_x + 220, numpad_y + 70),
+
+                            ("4", numpad_x + 10,  numpad_y + 140),
+                            ("5", numpad_x + 80,  numpad_y + 140),
+                            ("6", numpad_x + 150, numpad_y + 140),
+                            ("",  numpad_x + 220, numpad_y + 140),
+
+                            ("7", numpad_x + 10,  numpad_y + 210),
+                            ("8", numpad_x + 80,  numpad_y + 210),
+                            ("9", numpad_x + 150, numpad_y + 210),
+                            ("",  numpad_x + 220, numpad_y + 210),
+
+                            (".",  numpad_x + 10,  numpad_y + 280),
+                            ("0",  numpad_x + 80,  numpad_y + 280),
+                            ("C",  numpad_x + 150, numpad_y + 280),
+                            ("OK", numpad_x + 220, numpad_y + 280),
                         ]
 
                         bw = 60
@@ -1358,9 +1820,9 @@ class StreamServer:
                             (tw, th), _ = cv2.getTextSize(
                                 txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2
                             )
-                            tx = bx + (bw - tw) // 2
-                            ty = by + (bh + th) // 2
-                            cv2.putText(frame, txt, (tx, ty),
+                            text_x = bx + (bw - tw) // 2
+                            text_y = by + (bh + th) // 2
+                            cv2.putText(frame, txt, (text_x, text_y),
                                         cv2.FONT_HERSHEY_SIMPLEX,
                                         0.8, WHITE, 2, cv2.LINE_AA)
                             
@@ -1378,10 +1840,6 @@ class StreamServer:
                         overlay_data["screenshot_flag"] = 0
                         with open(screenshot_path, "w") as f:
                             json.dump({"screenshot_flag": 0}, f)
-
-
-
-                ################## END OF BUTTONS / MENUS ###########################
 
                 # Convert frame to GStreamer buffer as before...
                 data = frame.tobytes()
@@ -1613,11 +2071,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:3333/")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.31:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:3333/")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.33:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.31:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.33:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
@@ -1660,11 +2118,6 @@ class StreamServer:
                 self.running = False
             finally:
                 cam_mutex.release()
-    
-    #def updateConfig(self):
-        #TODO: Manipulate the running pipe rather than destroying and recreating it.
-        #self.stop()
-        #self.launch()
 
     def b(self):
         print("Br")
@@ -1686,4 +2139,3 @@ if __name__ == '__main__':
     streamServer.start()
 
 
-    
