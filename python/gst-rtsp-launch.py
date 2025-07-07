@@ -704,12 +704,12 @@ class StreamServer:
                     if zoom_in_flag == 1:
                         digital_zoom = min(8.0, digital_zoom + 0.2)
                         dz_data["zoom_in_flag"] = 0
-                        dz_data["zoom"] = digital_zoom
+                        #dz_data["zoom"] = digital_zoom
                         zoom_changed = True
                     if zoom_out_flag == 1:
                         digital_zoom = max(1.0, digital_zoom - 0.2)
                         dz_data["zoom_out_flag"] = 0
-                        dz_data["zoom"] = digital_zoom
+                        #dz_data["zoom"] = digital_zoom
                         zoom_changed = True
                     if zoom_changed:
                         with open(digital_zoom_path, "w") as f:
@@ -876,27 +876,11 @@ class StreamServer:
                                 alpha * crop[:, :, c] +
                                 (1 - alpha) * frame[y1c:y2, x1c:x2, c]
                             )
-
-                # --- Digital Zoom: + and - buttons
-                # dz_btn_w, dz_btn_h = 60, 60
-                # dz_btn_x = 0
-                # dz_btn_y_center = h // 2
-                # dz_btn_spacing = 20
-                # dz_minus_y = dz_btn_y_center - dz_btn_h - dz_btn_spacing // 2
-                # dz_plus_y  = dz_btn_y_center + dz_btn_spacing // 2
-                # cv2.rectangle(frame, (dz_btn_x, dz_minus_y), (dz_btn_x + dz_btn_w, dz_minus_y + dz_btn_h), MEDIUM_TURQUOISE, thickness=-1)
-                # cv2.rectangle(frame, (dz_btn_x, dz_minus_y), (dz_btn_x + dz_btn_w, dz_minus_y + dz_btn_h), MEDIUM_TURQUOISE, thickness=2)
-                # cv2.putText(frame, "-", (dz_btn_x + 9, dz_minus_y + 42), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 3, cv2.LINE_AA)
-                # cv2.rectangle(frame, (dz_btn_x, dz_plus_y), (dz_btn_x + dz_btn_w, dz_plus_y + dz_btn_h), MEDIUM_TURQUOISE, thickness=-1)
-                # cv2.rectangle(frame, (dz_btn_x, dz_plus_y), (dz_btn_x + dz_btn_w, dz_plus_y + dz_btn_h), MEDIUM_TURQUOISE, thickness=2)
-                # cv2.putText(frame, "+", (dz_btn_x + 9, dz_plus_y + 45), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 3, cv2.LINE_AA)
-                # cv2.putText(frame, f"x{digital_zoom:.2f}", (dz_btn_x, dz_btn_y_center), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255,255,255), 2, cv2.LINE_AA)
-
-                # --- Perfect centering + auto-scaled zoom text ---
-
+                            
                 dz_size    = 60
                 dz_spacing = 15
-                dz_x       = 20
+                margin     = 10              # how far from the left edge you want your UI
+                dz_x       = margin + dz_size // 2
                 frame_cy   = h // 2
 
                 minus_cy = frame_cy - dz_size - dz_spacing
@@ -904,24 +888,29 @@ class StreamServer:
                 plus_cy  = frame_cy + dz_size + dz_spacing
 
                 def draw_square_button(cx, cy, label, font_scale, font_thickness, text_color):
-                    x0 = cx
-                    y0 = int(cy - dz_size/2)
+                    half = dz_size // 2
+
+                    # compute square corners, then clamp to screen
+                    x0 = int(cx - half)
+                    y0 = int(cy - half)
+                    x0 = max(0, x0)                     # never off the left edge
+                    y0 = max(0, y0)                     # never off the top edge
                     x1 = x0 + dz_size
                     y1 = y0 + dz_size
 
-                    # box
+                    # draw background + border
                     cv2.rectangle(frame, (x0, y0), (x1, y1), DARK_TURQUOISE, -1)
                     cv2.rectangle(frame, (x0, y0), (x1, y1), MEDIUM_TURQUOISE, 2)
 
-                    # size of text
+                    # measure text
                     (tw, th), baseline = cv2.getTextSize(label,
                                                         cv2.FONT_HERSHEY_SIMPLEX,
                                                         font_scale,
                                                         font_thickness)
-                    # horizontal centering
-                    tx = x0 + (dz_size - tw)//2
-                    # vertical centering (subtract baseline so text isn't too low)
-                    ty = y0 + (dz_size + th)//2 - baseline//2
+
+                    # center the text: x-center is x0 + (dz_size - tw)/2; y-center is y0 + (dz_size + th)/2 minus baseline/2
+                    tx = x0 + (dz_size - tw) // 2
+                    ty = y0 + (dz_size + th) // 2 - baseline // 2
 
                     cv2.putText(frame, label, (tx, ty),
                                 cv2.FONT_HERSHEY_SIMPLEX,
@@ -930,21 +919,22 @@ class StreamServer:
                                 font_thickness,
                                 cv2.LINE_AA)
 
-                # “–” and “+” with tight centering
+                # draw the three buttons
                 draw_square_button(dz_x, minus_cy, "-",    font_scale=1.5, font_thickness=3, text_color=WHITE)
                 draw_square_button(dz_x, plus_cy,  "+",    font_scale=1.5, font_thickness=3, text_color=WHITE)
 
-                # Auto‑scale zoom label so it fits
+                # zoom label: auto‑scale
                 zoom_label = f"x{digital_zoom:.2f}"
-                # start big and shrink if necessary
                 fs = 1.2
                 (thw, thh), _ = cv2.getTextSize(zoom_label, cv2.FONT_HERSHEY_SIMPLEX, fs, 3)
-                if thw > dz_size - 8:  # leave 4px padding each side
+                if thw > dz_size - 8:
                     fs = (dz_size - 8) / thw * fs
 
                 draw_square_button(dz_x, zoom_cy, zoom_label,
                                 font_scale=fs, font_thickness=3,
                                 text_color=(240,240,0))
+
+
 
 
 
@@ -2071,11 +2061,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:3333/")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.33:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:3333/")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.31:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.33:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.31:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
