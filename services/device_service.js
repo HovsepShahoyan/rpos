@@ -445,6 +445,35 @@ var DeviceService = (function (_super) {
             var GetUsersResponse = {};
             return GetUsersResponse;
         };
+        var _this = this;
+        function formatOnvifLocalTime(dateObj) {
+            // Format as DD/MM/YYYY HH:MM:SS (24h)
+            const pad = n => n.toString().padStart(2, '0');
+            const day = pad(dateObj.getDate());
+            const month = pad(dateObj.getMonth() + 1);
+            const year = dateObj.getFullYear();
+            const hour = pad(dateObj.getHours());
+            const min = pad(dateObj.getMinutes());
+            const sec = pad(dateObj.getSeconds());
+            return `${day}/${month}/${year} ${hour}:${min}:${sec}`;
+        }
+        // Write ONVIF time to /tmp/onvif_time.json every second
+        function writeOnvifTimeFile() {
+            var now = new Date();
+            if (isNaN(now.getTime())) return; // Only write if valid date
+            var timeJson = {
+                utc: now.toISOString(),
+                local: formatOnvifLocalTime(now)
+                // timezone field removed
+            };
+            try {
+                require('fs').writeFileSync('/tmp/onvif_time.json', JSON.stringify(timeJson, null, 2));
+            } catch (e) {
+                console.error("Failed to write /tmp/onvif_time.json:", e);
+            }
+        }
+        writeOnvifTimeFile(); // Write immediately on startup
+        setInterval(writeOnvifTimeFile, 1000);
     };
     return DeviceService;
 }(SoapService));

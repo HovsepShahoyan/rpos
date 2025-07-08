@@ -58,6 +58,7 @@ gi.require_version('GstVideo','1.0')
 from gi.repository import GObject, Gst, Gio, GstVideo, GstRtspServer, GLib
 
 from threading import Thread, Lock
+from datetime import datetime
 cam_mutex = Lock()
 # -------------------
 def run_opencv_stream(mount_name, rtsp_url):
@@ -380,6 +381,8 @@ class StreamServer:
             if overlay is not None and overlay.shape[2] == 4:
                 log.debug(f"[DEBUG] Successfully preloaded overlay image: {overlay_path}")
 
+        onvif_time_str = ""
+
         # File watcher thread with improved timing
         def file_watcher():
             nonlocal overlay
@@ -414,6 +417,18 @@ class StreamServer:
                         #log.debug(f"[DEBUG] Loaded presets.json → add_marker_flag={overlay_data['add_marker_flag']}")
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to read presets: {e}")
+
+
+                onvif_time_path = "/tmp/onvif_time.json"
+                nonlocal onvif_time_str
+                try:
+                    if os.path.exists(onvif_time_path):
+                        with open(onvif_time_path, "r") as f:
+                            onvif_time_data = json.load(f)
+                        # Compose overlay string, e.g. "2025-07-08 14:23:45 UTC+3"
+                        onvif_time_str = f"{onvif_time_data.get('local', '')} {onvif_time_data.get('timezone', '')}"
+                except Exception as e:
+                    onvif_time_str = "ONVIF time unavailable"
 
                 try:
                     if overlay_data.get("add_marker_flag", 0) == 1 and os.path.exists(presets_numpad_path):
@@ -732,57 +747,6 @@ class StreamServer:
                     cropped = frame[y1:y2, x1:x2]
                     frame = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
 
-
-                h, w = frame.shape[:2]
-
-                # 1. Camera Coordinates (X and Y) - Yellow, Top-Right
-                camera_coords_label = "Camera Coordinates"
-                cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (64, 224, 208), 3, cv2.LINE_AA)
-                cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (128, 128, 0), 2, cv2.LINE_AA)
-                coords_label = f"X: {overlay_data['gps_x']}, Y: {overlay_data['gps_y']}"
-                cv2.putText(frame, coords_label, (w - 550, h - 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (64, 224, 208), 3, cv2.LINE_AA)
-                cv2.putText(frame, coords_label, (w - 550, h - 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (128, 128, 0), 2, cv2.LINE_AA)
-
-                # 2. Target Label - Red, Top-Left
-                target_label = "Target"
-                cv2.putText(frame, target_label, (30, 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (64, 224, 208), 3, cv2.LINE_AA)
-                cv2.putText(frame, target_label, (30, 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (102, 153, 153), 2, cv2.LINE_AA)
-
-                # 3. Delta X - Blue, Below Target
-                delta_x_label = f"X: {overlay_data['delta_x']}"
-                cv2.putText(frame, delta_x_label, (30, 100),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                cv2.putText(frame, delta_x_label, (30, 100),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (102, 153, 153), 2, cv2.LINE_AA)
-
-                # 4. Delta Y - Blue, Below Delta X
-                delta_y_label = f"Y: {overlay_data['delta_y']}"
-                cv2.putText(frame, delta_y_label, (30, 150),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (64, 224, 208), 3, cv2.LINE_AA)
-                cv2.putText(frame, delta_y_label, (30, 150),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (102, 153, 153), 2, cv2.LINE_AA)
-
-                # 5. Distance - Blue, Top-Left
-                distance_label = f"Distance: {overlay_data['D']}"
-                cv2.putText(frame, distance_label, (30, 200),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (64, 224, 208), 3, cv2.LINE_AA)
-                cv2.putText(frame, distance_label, (30, 200),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (102, 153, 153), 2, cv2.LINE_AA)
-
-                # 6. Azimuth and Elevation (Az and El) - Green, Top-Middle
-                angle_label = f"AngleD: {overlay_data['az_a']} ({overlay_data['az_d_s']}°)   MestoC: {overlay_data['el_a']} ({overlay_data['el_d_s']}°)"
-                cv2.putText(frame, angle_label, (w//2 - 200, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (64, 224, 208), 3, cv2.LINE_AA)
-                cv2.putText(frame, angle_label, (w//2 - 200, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (102, 153, 153), 2, cv2.LINE_AA)
-                
-
                 ################## BUTTONS (Green Theme) ###########################
 
                 # Define dark‐green palette
@@ -790,6 +754,70 @@ class StreamServer:
                 MEDIUM_GREEN      = (208, 224, 64)
                 WHITE             = (255, 255, 255)
                 BLACK             = (0, 0, 0)
+
+                h, w = frame.shape[:2]
+
+                if onvif_time_str:
+                    h, w = frame.shape[:2]
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    font_scale = 1.0
+                    thickness = 2
+                    (tw, th), _ = cv2.getTextSize(onvif_time_str, font, font_scale, thickness)
+                    x = 15
+                    y = 40
+                    # Draw background rectangle for readability
+                    # Draw text
+                    cv2.putText(frame, onvif_time_str, (x, y), font, font_scale, BLACK, 3, cv2.LINE_AA)
+                    cv2.putText(frame, onvif_time_str, (x, y), font, font_scale, DARK_GREEN, 2, cv2.LINE_AA)
+
+
+                # 1. Camera Coordinates (X and Y) - Yellow, Top-Right
+                camera_coords_label = "Camera Coordinates"
+                cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
+                cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
+                coords_label = f"X: {overlay_data['gps_x']}, Y: {overlay_data['gps_y']}"
+                cv2.putText(frame, coords_label, (w - 550, h - 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 3, cv2.LINE_AA)
+                cv2.putText(frame, coords_label, (w - 550, h - 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 2, cv2.LINE_AA)
+
+                # 2. Target Label 
+                target_label = "Target"
+                cv2.putText(frame, target_label, (20, 150),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
+                cv2.putText(frame, target_label, (20, 150),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
+
+                # 3. Delta X
+                delta_x_label = f"X: {overlay_data['delta_x']}"
+                cv2.putText(frame, delta_x_label, (20, 200),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
+                cv2.putText(frame, delta_x_label, (20, 200),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
+
+                # 4. Delta Y
+                delta_y_label = f"Y: {overlay_data['delta_y']}"
+                cv2.putText(frame, delta_y_label, (20, 250),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
+                cv2.putText(frame, delta_y_label, (20, 250),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
+
+                # 5. Distance 
+                distance_label = f"Distance: {overlay_data['D']}"
+                cv2.putText(frame, distance_label, (20, 300),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
+                cv2.putText(frame, distance_label, (20, 300),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
+
+                # 6. Azimuth and Elevation (Az and El) - Green, Top-Middle
+                # angle_label = f"AngleD: {overlay_data['az_a']} ({overlay_data['az_d_s']}°)   MestoC: {overlay_data['el_a']} ({overlay_data['el_d_s']}°)"
+                # cv2.putText(frame, angle_label, (w//2 - 200, 30),
+                #             cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
+                # cv2.putText(frame, angle_label, (w//2 - 200, 30),
+                #             cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
+                
 
                 h, w = frame.shape[:2]
 
@@ -805,39 +833,13 @@ class StreamServer:
                 cv2.putText(frame, coords_label, (w - 550, h - 20),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
 
-                # 2. Target Label - Red outline, unchanged
-                target_label = "Target"
-                cv2.putText(frame, target_label, (30, 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
-                cv2.putText(frame, target_label, (30, 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
-
-                # 3. Delta X, Delta Y, Distance, Azimuth/Elevation - keep original colors
-                delta_x_label = f"X: {overlay_data['delta_x']}"
-                cv2.putText(frame, delta_x_label, (30, 100),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
-                cv2.putText(frame, delta_x_label, (30, 100),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
-
-                delta_y_label = f"Y: {overlay_data['delta_y']}"
-                cv2.putText(frame, delta_y_label, (30, 150),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
-                cv2.putText(frame, delta_y_label, (30, 150),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
-
-                distance_label = f"Distance: {overlay_data['D']}"
-                cv2.putText(frame, distance_label, (30, 200),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
-                cv2.putText(frame, distance_label, (30, 200),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
-
                 angle_label = (
                     f"AngleD: {overlay_data['az_a']} ({overlay_data['az_d_s']})   "
                     f"MestoC: {overlay_data['el_a']} ({overlay_data['el_d_s']})"
                 )
-                cv2.putText(frame, angle_label, (w // 2 - 200, 30),
+                cv2.putText(frame, angle_label, (w // 2 - 300, 35),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
-                cv2.putText(frame, angle_label, (w // 2 - 200, 30),
+                cv2.putText(frame, angle_label, (w // 2 - 300, 35),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
 
                 # Dark‐turquoise in BGR:
@@ -933,10 +935,6 @@ class StreamServer:
                 draw_square_button(dz_x, zoom_cy, zoom_label,
                                 font_scale=fs, font_thickness=3,
                                 text_color=(240,240,0))
-
-
-
-
 
                 # BUTTON 0 - Screenshot (Left of Button 1)
                 button0_w, button0_h = rect_width + 100, rect_height
