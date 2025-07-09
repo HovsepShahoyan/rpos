@@ -620,6 +620,16 @@ class StreamServer:
             last_push_time = time.time()
             last_network_mtime = 0   #
             lock = threading.Lock()
+            
+            screenshot_img = None
+            screenshot_img_path = "/home/jetson/rpos/scripts/r.jpg"
+            if os.path.exists(screenshot_img_path):
+                screenshot_img = cv2.imread(screenshot_img_path, cv2.IMREAD_UNCHANGED)
+
+            netowork_config_img = None
+            network_config_img_path = "/home/jetson/rpos/scripts/eth.jpg"
+            if os.path.exists(network_config_img_path):
+                netowork_config_img = cv2.imread(network_config_img_path, cv2.IMREAD_UNCHANGED)
 
             def push_frame(_appsrc, _):
                 nonlocal frame_count, last_push_time, cap, overlay
@@ -937,23 +947,25 @@ class StreamServer:
                                 text_color=(240,240,0))
 
                 # BUTTON 0 - Screenshot (Left of Button 1)
-                button0_w, button0_h = rect_width + 100, rect_height
+                # ...existing code...
+                button0_w, button0_h = rect_width, rect_height
                 button0_x = button1_top_left_x - horizontal_spacing - button0_w
                 button0_y = button1_top_left_y
-                cv2.rectangle(frame,
-                            (button0_x, button0_y),
-                            (button0_x + button0_w, button0_y + button0_h),
-                            DARK_TURQUOISE, thickness=-1)
-                cv2.rectangle(frame,
-                            (button0_x, button0_y),
-                            (button0_x + button0_w, button0_y + button0_h),
-                            MEDIUM_TURQUOISE, thickness=2)
-                text = "Screenshot"
-                (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
-                tx = button0_x + (button0_w - tw) // 2
-                ty = button0_y + (button0_h + th) // 2
-                cv2.putText(frame, text, (tx, ty),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
+
+                if screenshot_img is not None:
+                    img_resized = cv2.resize(screenshot_img, (button0_w, button0_h))
+                    # Convert to BGRA if needed
+                    if img_resized.shape[2] == 3:
+                        img_resized = cv2.cvtColor(img_resized, cv2.COLOR_BGR2BGRA)
+                    # Clamp coordinates to frame bounds
+                    x0 = max(0, button0_x)
+                    y0 = max(0, button0_y)
+                    x1 = min(w, button0_x + button0_w)
+                    y1 = min(h, button0_y + button0_h)
+                    img_w = x1 - x0
+                    img_h = y1 - y0
+                    if img_w > 0 and img_h > 0:
+                        frame[y0:y1, x0:x1] = img_resized[0:img_h, 0:img_w, :]
 
                 # BUTTON 1
                 cv2.rectangle(frame,
@@ -983,6 +995,7 @@ class StreamServer:
                             (button2_top_left_x, button2_top_left_y),
                             (button2_top_left_x + rect_width, button2_top_left_y + rect_height),
                             MEDIUM_TURQUOISE, thickness=2)
+                
                 # Add "NC" text to Button 2
                 text = "NC"
                 (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
@@ -991,25 +1004,26 @@ class StreamServer:
                 cv2.putText(frame, text, (tx, ty),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
 
-                # BUTTON 3 (NetCfg) further to the right
-                button3_w = rect_width + 40
+                # BUTTON 3 (NetCfg) further to the right             
+                button3_w = rect_width
                 button3_h = rect_height
                 button3_x = button2_top_left_x + rect_width + horizontal_spacing
                 button3_y = button1_top_left_y
-                cv2.rectangle(frame,
-                            (button3_x, button3_y),
-                            (button3_x + button3_w, button3_y + button3_h),
-                            DARK_TURQUOISE, thickness=-1)
-                cv2.rectangle(frame,
-                            (button3_x, button3_y),
-                            (button3_x + button3_w, button3_y + button3_h),
-                            MEDIUM_TURQUOISE, thickness=2)
-                text = "NetCfg"
-                (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
-                tx = button3_x + (button3_w - tw) // 2
-                ty = button3_y + (button3_h + th) // 2
-                cv2.putText(frame, text, (tx, ty),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
+
+                if netowork_config_img is not None:
+                    img_resized = cv2.resize(netowork_config_img, (button3_w, button3_h))
+                    # Convert to BGRA if needed
+                    if img_resized.shape[2] == 3:
+                        img_resized = cv2.cvtColor(img_resized, cv2.COLOR_BGR2BGRA)
+                    # Clamp coordinates to frame bounds
+                    x0 = max(0, button3_x)
+                    y0 = max(0, button3_y)
+                    x1 = min(w, button3_x + button3_w)
+                    y1 = min(h, button3_y + button3_h)
+                    img_w = x1 - x0
+                    img_h = y1 - y0
+                    if img_w > 0 and img_h > 0:
+                        frame[y0:y1, x0:x1] = img_resized[0:img_h, 0:img_w, :]
 
                 # BUTTON 4 PRESET
                 button4_w, button4_h = rect_width + 60, rect_height
