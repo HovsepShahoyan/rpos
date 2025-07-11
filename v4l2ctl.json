@@ -3,7 +3,7 @@
 {
 "brightness":50,
 "contrast":0,
-"palette":0,
+"palette":1,
 "far_focus":false,
 "near_focus":false,
 "tele_zoom":false,

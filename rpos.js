@@ -4,6 +4,8 @@ require("./lib/extension");
 var http = require("http");
 var express = require("express");
 var fs = require("fs");
+var session = require("express-session");
+var bodyParser = require("body-parser");
 var os = require("os");
 var utils_1 = require("./lib/utils");
 var Camera = require("./lib/camera");
@@ -83,6 +85,46 @@ for (var i in config.DeviceInformation) {
 }
 var webserver = express();
 var httpserver = http.createServer(webserver);
+
+webserver.use(bodyParser.urlencoded({ extended: false }));
+webserver.use(session({
+  secret: 'rpos_secret_key',
+  resave: false,
+  saveUninitialized: true,
+  cookie: { secure: false }
+}));
+
+function authMiddleware(req, res, next) {
+  if (req.session && req.session.authenticated) {
+    next();
+  } else if (
+    req.path === '/login' ||
+    req.path === '/login.html' ||
+    req.path === '/login.ntl' ||
+    req.path.startsWith('/api/')
+  ) {
+    next();
+  } else {
+    res.redirect('/login');
+  }
+}
+
+webserver.use(authMiddleware);
+
+// Login routes
+webserver.get('/login', function(req, res) {
+  res.render('login.ntl');
+});
+
+webserver.post('/login', function(req, res) {
+  const { username, password } = req.body;
+  if (username === 'admin' && password === 'admin') {
+    req.session.authenticated = true;
+    res.redirect('/');
+  } else {
+    res.redirect('/login?error=1');
+  }
+});
 httpserver.listen(config.ServicePort);
 var ptz_driver = new PTZDriver(config);
 var camera = new Camera(config, webserver);
