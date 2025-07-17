@@ -1,14 +1,14 @@
 {
 "UserControls":
 {
-"brightness":17,
-"contrast":31,
+"brightness":65,
+"contrast":85,
 "palette":0,
 "far_focus":false,
 "near_focus":false,
 "tele_zoom":false,
 "wide_zoom":false,
-"ip_address":"192.168.0.35",
+"ip_address":"192.168.0.86",
 "subnet_mask":"255.255.255.0",
 "gateway":"192.168.0.1",
 "DNS1":"8.8.8.8",
