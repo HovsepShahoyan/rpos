@@ -4,6 +4,7 @@
 "brightness":65,
 "contrast":85,
 "palette":0,
+"codec":1,
 "far_focus":false,
 "near_focus":false,
 "tele_zoom":false,

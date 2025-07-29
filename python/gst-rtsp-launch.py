@@ -233,6 +233,26 @@ class StreamServer:
         factory.connect("media-configure", on_media_configure)
         return factory
     
+    def read_codec_config(self):
+        global global_codec
+        try:
+            if os.path.exists("/tmp/codec.json"):
+                with open("/tmp/codec.json", "r") as f:
+                    codec_data = json.load(f)
+                    codec_value = codec_data.get("codec", "h264").lower()
+                    if codec_value in ["h264", "h265"]:
+                        global_codec = codec_value
+                        log.info(f"Codec configuration loaded: {global_codec}")
+                    else:
+                        log.warning(f"Invalid codec in /tmp/codec.json: {codec_value}, using default: h264")
+                        global_codec = "h264"
+            else:
+                log.info("No codec configuration file found, using default: h264")
+                global_codec = "h264"
+        except Exception as e:
+            log.error(f"Error reading codec configuration: {e}")
+            global_codec = "h264"
+    
     def start_opencv_overlay_stream(self, mount_name, rtsp_input_url, overlay_path):
         import cv2
         import numpy as np
@@ -242,33 +262,42 @@ class StreamServer:
         import time
         from gi.repository import Gst, GstRtspServer
 
+        global global_codec
+        self.read_codec_config()
         log.debug(f"[DEBUG] Starting OpenCV overlay stream for mount: {mount_name}")
         log.debug(f"[DEBUG] RTSP input URL: {rtsp_input_url}")
         log.debug(f"[DEBUG] Overlay path: {overlay_path}")
         
+        # Initialize GStreamer
+        Gst.init(None)
+        
+        # Always assume input is H.264 and convert to H.265 output
+
         if mount_name == "stream":
             gst_pipeline = (
-                f'rtspsrc location={rtsp_input_url} latency=0 ! '
+                f'rtspsrc location={rtsp_input_url} latency=200 protocols=tcp buffer-mode=auto ! '
+                f'queue max-size-buffers=5 max-size-time=200000000 leaky=downstream ! '
                 f'rtph264depay ! h264parse ! nvv4l2decoder ! '
-                f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
-                f'nvvidconv ! video/x-raw, format=BGRx, width=1350, height=1080 !'
+                f'nvvidconv ! video/x-raw, format=BGRx, width=1350, height=1080 ! '
                 f'appsink drop=true max-buffers=3 sync=false'
             )
         else:
             gst_pipeline = (
-                f'rtspsrc location={rtsp_input_url} latency=0 ! '
+                f'rtspsrc location={rtsp_input_url} latency=200 protocols=tcp buffer-mode=auto ! '
+                f'queue max-size-buffers=5 max-size-time=200000000 leaky=downstream ! '
                 f'rtph264depay ! h264parse ! nvv4l2decoder ! '
-                f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
                 f'nvvidconv ! video/x-raw, format=BGRx ! '
                 f'appsink drop=true max-buffers=3 sync=false'
             )
 
+        log.debug(f"[DEBUG] Using H.264 input pipeline: {gst_pipeline}")
         cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
 
-        if not cap.isOpened():
-            log.error(f"[ERROR] Cannot open RTSP stream: {rtsp_input_url}")
-            raise Exception(f"[ERROR] Cannot open RTSP stream: {rtsp_input_url}")
-        log.debug(f"[DEBUG] Successfully opened RTSP stream: {rtsp_input_url}")
+        if not cap or not cap.isOpened():
+            log.error(f"[ERROR] Cannot open H.264 RTSP stream: {rtsp_input_url}")
+            raise Exception(f"[ERROR] Cannot open H.264 RTSP stream: {rtsp_input_url}")
+        
+        log.debug(f"[DEBUG] Successfully opened H.264 RTSP stream: {rtsp_input_url}")
 
         # Get video properties
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -284,34 +313,63 @@ class StreamServer:
 
         log.debug(f"[DEBUG] Camera resolution: {width}x{height}, FPS: {fps}")
 
-        if mount_name == "stream": 
-            pipeline_str = (
-                f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
-                f"latency=0 sync=false "
-                f"! video/x-raw,format=BGRx,width=1350,height=1080,framerate={fps}/1 "
-                f"! videobox left=-285 right=-285 border-alpha=0 "
-                f"! video/x-raw,width=1920,height=1080 "
-                f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
-                f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
-                f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
-                f"profile=baseline iframeinterval=25 bitrate=4096000 tune=zerolatency "
-                f"insert-sps-pps=1 "
-                f"! h264parse "
-                f"! rtph264pay name=pay0 pt=96 config-interval=0"
-            )
+        if global_codec == "h265":
+            if mount_name == "stream": 
+                pipeline_str = (
+                    f"appsrc name=source is-live=true do-timestamp=true format=time "
+                    f"caps=video/x-raw,format=BGRx,width=1350,height=1080,framerate={fps}/1 "
+                    f"! queue max-size-buffers=3 leaky=downstream "
+                    f"! videobox left=-285 right=-285 border-alpha=0 "
+                    f"! video/x-raw,width=1920,height=1080 "
+                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
+                    f"! nvv4l2h265enc preset-level=MediumPreset bitrate=8000000 "
+                    f"control-rate=variable-bitrate iframeinterval=30 insert-sps-pps=1 "
+                    f"insert-vui=1 insert-aud=1 "
+                    f"! h265parse config-interval=1 "
+                    f"! rtph265pay name=pay0 pt=96 config-interval=1 mtu=1400"
+                )
+            else:
+                pipeline_str = (
+                    f"appsrc name=source is-live=true do-timestamp=true format=time "
+                    f"caps=video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
+                    f"! queue max-size-buffers=3 leaky=downstream "
+                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
+                    f"! nvv4l2h265enc preset-level=MediumPreset bitrate=8000000 "
+                    f"control-rate=variable-bitrate iframeinterval=30 insert-sps-pps=1 "
+                    f"insert-vui=1 insert-aud=1 "
+                    f"! h265parse config-interval=1 "
+                    f"! rtph265pay name=pay0 pt=96 config-interval=1 mtu=1400"
+                )
         else:
-            pipeline_str = (
-                f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
-                f"latency=0 sync=false "
-                f"! video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
-                f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
-                f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,framerate={fps}/1 "
-                f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
-                f"profile=baseline iframeinterval=25 bitrate=4096000 tune=zerolatency "
-                f"insert-sps-pps=1 "
-                f"! h264parse "
-                f"! rtph264pay name=pay0 pt=96 config-interval=0"
-            )
+            if mount_name == "stream": 
+                pipeline_str = (
+                    f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
+                    f"latency=0 sync=false "
+                    f"! video/x-raw,format=BGRx,width=1350,height=1080,framerate={fps}/1 "
+                    f"! videobox left=-285 right=-285 border-alpha=0 "
+                    f"! video/x-raw,width=1920,height=1080 "
+                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
+                    f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
+                    f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
+                    f"profile=baseline iframeinterval=25 bitrate=4096000 tune=zerolatency "
+                    f"insert-sps-pps=1 "
+                    f"! h264parse "
+                    f"! rtph264pay name=pay0 pt=96 config-interval=0"
+                )
+            else:
+                pipeline_str = (
+                    f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
+                    f"latency=0 sync=false "
+                    f"! video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
+                    f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
+                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,framerate={fps}/1 "
+                    f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
+                    f"profile=baseline iframeinterval=25 bitrate=4096000 tune=zerolatency "
+                    f"insert-sps-pps=1 "
+                    f"! h264parse "
+                    f"! rtph264pay name=pay0 pt=96 config-interval=0"
+                )
+
 
         log.debug(f"[DEBUG] GStreamer pipeline: {pipeline_str}")
 
@@ -2073,11 +2131,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:3333/")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.31:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.21:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.31:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.31:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.21:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
