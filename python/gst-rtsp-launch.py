@@ -340,6 +340,32 @@ class StreamServer:
                     f"! h265parse config-interval=1 "
                     f"! rtph265pay name=pay0 pt=96 config-interval=1 mtu=1400"
                 )
+
+        elif global_codec == "mpeg":
+            if mount_name == "stream": 
+                pipeline_str = (
+                    f"appsrc name=source is-live=true do-timestamp=true format=time "
+                    f"caps=video/x-raw,format=BGRx,width=1350,height=1080,framerate={fps}/1 "
+                    f"! queue max-size-buffers=3 leaky=downstream "
+                    f"! videobox left=-285 right=-285 border-alpha=0 "
+                    f"! video/x-raw,width=1920,height=1080 "
+                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
+                    f"! nvv4l2mpeg4enc bitrate=8000000 iframeinterval=30 "
+                    f"control-rate=variable-bitrate preset-level=MediumPreset "
+                    f"! mpeg4videoparse "
+                    f"! rtpmp4vpay name=pay0 pt=96 config-interval=1 mtu=1400"
+                )
+            else:
+                pipeline_str = (
+                    f"appsrc name=source is-live=true do-timestamp=true format=time "
+                    f"caps=video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
+                    f"! queue max-size-buffers=3 leaky=downstream "
+                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
+                    f"! nvv4l2mpeg4enc bitrate=8000000 iframeinterval=30 "
+                    f"control-rate=variable-bitrate preset-level=MediumPreset "
+                    f"! mpeg4videoparse "
+                    f"! rtpmp4vpay name=pay0 pt=96 config-interval=1 mtu=1400"
+                )
         else:
             if mount_name == "stream": 
                 pipeline_str = (
