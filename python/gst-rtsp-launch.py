@@ -240,7 +240,7 @@ class StreamServer:
                 with open("/tmp/codec.json", "r") as f:
                     codec_data = json.load(f)
                     codec_value = codec_data.get("codec", "h264").lower()
-                    if codec_value in ["h264", "h265"]:
+                    if codec_value in ["h264", "h265", "mpeg"]:
                         global_codec = codec_value
                         log.info(f"Codec configuration loaded: {global_codec}")
                     else:
@@ -272,20 +272,19 @@ class StreamServer:
         Gst.init(None)
         
         # Always assume input is H.264 and convert to H.265 output
-
         if mount_name == "stream":
             gst_pipeline = (
-                f'rtspsrc location={rtsp_input_url} latency=200 protocols=tcp buffer-mode=auto ! '
-                f'queue max-size-buffers=5 max-size-time=200000000 leaky=downstream ! '
+                f'rtspsrc location={rtsp_input_url} latency=0 ! '
                 f'rtph264depay ! h264parse ! nvv4l2decoder ! '
-                f'nvvidconv ! video/x-raw, format=BGRx, width=1350, height=1080 ! '
+                f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
+                f'nvvidconv ! video/x-raw, format=BGRx, width=1350, height=1080 !'
                 f'appsink drop=true max-buffers=3 sync=false'
             )
         else:
             gst_pipeline = (
-                f'rtspsrc location={rtsp_input_url} latency=200 protocols=tcp buffer-mode=auto ! '
-                f'queue max-size-buffers=5 max-size-time=200000000 leaky=downstream ! '
+                f'rtspsrc location={rtsp_input_url} latency=0 ! '
                 f'rtph264depay ! h264parse ! nvv4l2decoder ! '
+                f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
                 f'nvvidconv ! video/x-raw, format=BGRx ! '
                 f'appsink drop=true max-buffers=3 sync=false'
             )
