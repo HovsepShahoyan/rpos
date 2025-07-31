@@ -417,6 +417,8 @@ class StreamServer:
         presets_path     = "/tmp/presets.json"
         presets_numpad_path = "/tmp/presets_numpad.json"
         screenshot_path = "/tmp/screenshot_flag.json"
+        move_to_target_path = "/tmp/move_to_target.json"
+        move_numpad_path = "/tmp/move_numpad.json"
         log.debug(f"[DEBUG] Overlay data paths: {coords_path}, {gps_path}, {angles_path}, {hyusis_path}")
 
         # Initialize overlay data
@@ -453,6 +455,12 @@ class StreamServer:
             "marker_name":       "",
             "markers":           [""] * 10,
             "screenshot_flag": 0,
+            "move_to_target_flag": 0,
+            "move_target_x": "0",
+            "move_target_y": "0", 
+            "move_target_height": "0",
+            "active_move_field": None,  # "x", "y", or "height"
+            "move_numpad_flag": 0,
         }
 
         log.debug(f"[DEBUG] Initialized overlay data: {overlay_data}")
@@ -475,7 +483,6 @@ class StreamServer:
             last_network_mtime = 0
             while True:
                 # Check menu flag file
-
                 try:
                     if os.path.exists(screenshot_path):
                         with open(screenshot_path, "r") as f:
@@ -2156,11 +2163,11 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.21:3333/stream", "/tmp/active_cross1.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:3333/")
+            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.33:3333/stream", "/tmp/active_cross1.png")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.21:1111/", "/tmp/active_cross2.png")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:1111/")
+            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.33:1111/", "/tmp/active_cross2.png")
 
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
