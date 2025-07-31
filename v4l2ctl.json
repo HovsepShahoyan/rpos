@@ -1,10 +1,10 @@
 {
 "UserControls":
 {
-"brightness":65,
+"brightness":32,
 "contrast":85,
 "palette":0,
-"codec":2,
+"codec":1,
 "far_focus":false,
 "near_focus":false,
 "tele_zoom":false,
