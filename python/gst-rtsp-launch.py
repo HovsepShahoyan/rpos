@@ -482,6 +482,50 @@ class StreamServer:
             last_coords_mtime = 0
             last_network_mtime = 0
             while True:
+                # Move to Target
+                try:
+                    if os.path.exists(move_to_target_path):
+                        with open(move_to_target_path, "r") as f:
+                            move_data = json.load(f)
+                            overlay_data["move_to_target_flag"] = int(move_data.get("move_to_target_flag", 0))
+                            overlay_data["active_move_field"] = move_data.get("active_field", None)
+                            overlay_data["move_target_x"] = str(move_data.get("x", "0"))
+                            overlay_data["move_target_y"] = str(move_data.get("y", "0"))
+                            overlay_data["move_target_height"] = str(move_data.get("height", "0"))
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read move to target data: {e}")
+
+                try:
+                    if os.path.exists(move_numpad_path):
+                        with open(move_numpad_path, "r") as f:
+                            pad = json.load(f)
+                            overlay_data["move_numpad_flag"] = int(pad.get("numpad_flag", 0))
+                            pressed = pad.get("digit", "")
+                            if overlay_data["move_numpad_flag"] == 1 and overlay_data["active_move_field"]:
+                                fld = overlay_data["active_move_field"]
+                                field_key = f"move_target_{fld}"
+                                cur = overlay_data.get(field_key, "")
+                                if pressed == "C":
+                                    overlay_data[field_key] = ""
+                                elif pressed == "OK":
+                                    overlay_data["move_numpad_flag"] = 0  # Close numpad
+                                    # Write back to move_to_target.json
+                                    with open(move_to_target_path, "w") as f:
+                                        json.dump({
+                                            "move_to_target_flag": overlay_data["move_to_target_flag"],
+                                            "active_field": overlay_data["active_move_field"],
+                                            "x": overlay_data["move_target_x"],
+                                            "y": overlay_data["move_target_y"],
+                                            "height": overlay_data["move_target_height"]
+                                        }, f)
+                                else:
+                                    if cur == "":
+                                        overlay_data[field_key] = str(pressed)
+                                    else:
+                                        overlay_data[field_key] = cur + str(pressed)
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read move numpad data: {e}")
+
                 # Check menu flag file
                 try:
                     if os.path.exists(screenshot_path):
@@ -1134,20 +1178,28 @@ class StreamServer:
                 cv2.putText(frame, text, (tx, ty),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
                 
-                # if overlay_data.get("screenshot_flag", 0) == 1:
-                #     try:
-                #         # Save the current frame
-                #         timestamp = time.strftime("%Y%m%d_%H%M%S")
-                #         filename = f"/tmp/screenshot_{timestamp}.png"
-                #         cv2.imwrite(filename, frame)
-                #         log.info(f"[Screenshot] Saved screenshot: {filename}")
-                #     except Exception as e:
-                #         log.warning(f"[Screenshot] Failed to save screenshot: {e}")
-                #     finally:
-                #         # Clear the screenshot flag so it doesn't trigger again every frame
-                #         overlay_data["screenshot_flag"] = 0
-                #         with open(screenshot_path, "w") as f:
-                #             json.dump({"screenshot_flag": 0}, f)
+                # BUTTON 5
+                buttonMT_w, buttonMT_h = rect_width, rect_height
+                button0_x = button1_top_left_x - horizontal_spacing - rect_width 
+                buttonMT_x = button0_x - horizontal_spacing - buttonMT_w   
+                buttonMT_y = button1_top_left_y
+
+                cv2.rectangle(frame,
+                            (buttonMT_x, buttonMT_y),
+                            (buttonMT_x + buttonMT_w, buttonMT_y + buttonMT_h),
+                            DARK_TURQUOISE, thickness=-1)
+                cv2.rectangle(frame,
+                            (buttonMT_x, buttonMT_y),
+                            (buttonMT_x + buttonMT_w, buttonMT_y + buttonMT_h),
+                            MEDIUM_TURQUOISE, thickness=2)
+
+                # Add "MT" text to Button MT
+                text = "MT"
+                (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                tx = buttonMT_x + (buttonMT_w - tw) // 2
+                ty = buttonMT_y + (buttonMT_h + th) // 2
+                cv2.putText(frame, text, (tx, ty),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
 
                 if overlay_data.get("presets_flag", 0) == 1:
                     # Panel dimensions & position
@@ -1932,6 +1984,215 @@ class StreamServer:
                         overlay_data["screenshot_flag"] = 0
                         with open(screenshot_path, "w") as f:
                             json.dump({"screenshot_flag": 0}, f)
+
+                # ===========================
+                if overlay_data.get("move_to_target_flag", 0) == 1:
+                    menu_width = 400
+                    menu_height = 400
+                    margin_top = 10
+                    margin_left = 10
+
+                    # Background (dark green fill, medium green border)
+                    cv2.rectangle(frame,
+                                (margin_left, margin_top),
+                                (margin_left + menu_width, margin_top + menu_height),
+                                DARK_GREEN, thickness=-1)
+                    cv2.rectangle(frame,
+                                (margin_left, margin_top),
+                                (margin_left + menu_width, margin_top + menu_height),
+                                MEDIUM_GREEN, thickness=2)
+
+                    # Title
+                    title_text = "Move to Target"
+                    font_scale = 1.2
+                    thickness = 2
+                    (text_width, text_height), _ = cv2.getTextSize(title_text,
+                                                                cv2.FONT_HERSHEY_SIMPLEX,
+                                                                font_scale, thickness)
+                    title_x = margin_left + (menu_width - text_width) // 2
+                    title_y = margin_top + 40
+                    cv2.putText(frame, title_text, (title_x, title_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                                BLACK, thickness + 2, cv2.LINE_AA)  # Black outline
+                    cv2.putText(frame, title_text, (title_x, title_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                                WHITE, thickness, cv2.LINE_AA)
+
+                    # Input fields
+                    input_height = 40
+                    input_y_start = title_y + 30
+                    field_spacing = 60
+
+                    # X Field
+                    x_field_rect = (
+                        margin_left + 80,
+                        input_y_start,
+                        menu_width - 160,
+                        input_height
+                    )
+                    x_field_color = MEDIUM_GREEN if overlay_data.get("active_move_field") == "x" else (200, 200, 200)
+                    cv2.rectangle(frame,
+                                (x_field_rect[0], x_field_rect[1]),
+                                (x_field_rect[0] + x_field_rect[2], x_field_rect[1] + x_field_rect[3]),
+                                x_field_color, thickness=-1)
+                    cv2.putText(frame, "X:",
+                                (x_field_rect[0] - 30, x_field_rect[1] + x_field_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2)
+                    # Display current value
+                    cv2.putText(frame, overlay_data.get("move_target_x", "0"),
+                                (x_field_rect[0] + 10, x_field_rect[1] + x_field_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+
+                    # Y Field
+                    y_field_rect = (
+                        margin_left + 80,
+                        input_y_start + field_spacing,
+                        menu_width - 160,
+                        input_height
+                    )
+                    y_field_color = MEDIUM_GREEN if overlay_data.get("active_move_field") == "y" else (200, 200, 200)
+                    cv2.rectangle(frame,
+                                (y_field_rect[0], y_field_rect[1]),
+                                (y_field_rect[0] + y_field_rect[2], y_field_rect[1] + y_field_rect[3]),
+                                y_field_color, thickness=-1)
+                    cv2.putText(frame, "Y:",
+                                (y_field_rect[0] - 30, y_field_rect[1] + y_field_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2)
+                    # Display current value
+                    cv2.putText(frame, overlay_data.get("move_target_y", "0"),
+                                (y_field_rect[0] + 10, y_field_rect[1] + y_field_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+
+                    # Height Field
+                    height_field_rect = (
+                        margin_left + 80,
+                        input_y_start + field_spacing * 2,
+                        menu_width - 160,
+                        input_height
+                    )
+                    height_field_color = MEDIUM_GREEN if overlay_data.get("active_move_field") == "height" else (200, 200, 200)
+                    cv2.rectangle(frame,
+                                (height_field_rect[0], height_field_rect[1]),
+                                (height_field_rect[0] + height_field_rect[2], height_field_rect[1] + height_field_rect[3]),
+                                height_field_color, thickness=-1)
+                    cv2.putText(frame, "Height:",
+                                (height_field_rect[0] - 70, height_field_rect[1] + height_field_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2)
+                    # Display current value
+                    cv2.putText(frame, overlay_data.get("move_target_height", "0"),
+                                (height_field_rect[0] + 10, height_field_rect[1] + height_field_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+
+                    # Move Button
+                    move_button_width = 120
+                    move_button_height = 50
+                    move_button_x = margin_left + (menu_width - move_button_width) // 2
+                    move_button_y = input_y_start + field_spacing * 3 + 20
+
+                    cv2.rectangle(frame,
+                                (move_button_x, move_button_y),
+                                (move_button_x + move_button_width, move_button_y + move_button_height),
+                                MEDIUM_GREEN, thickness=-1)
+                    cv2.rectangle(frame,
+                                (move_button_x, move_button_y),
+                                (move_button_x + move_button_width, move_button_y + move_button_height),
+                                DARK_GREEN, thickness=2)
+
+                    # Move button text
+                    move_text = "MOVE"
+                    font_scale = 1.0
+                    thickness = 2
+                    (text_width, text_height), _ = cv2.getTextSize(move_text,
+                                                                cv2.FONT_HERSHEY_SIMPLEX,
+                                                                font_scale, thickness)
+                    text_x = move_button_x + (move_button_width - text_width) // 2
+                    text_y = move_button_y + (move_button_height + text_height) // 2
+                    cv2.putText(frame, move_text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                                BLACK, thickness + 2, cv2.LINE_AA)  # Black outline
+                    cv2.putText(frame, move_text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                                WHITE, thickness, cv2.LINE_AA)
+
+                    # Draw move-numpad (if any field is active)
+                    if overlay_data.get("active_move_field") is not None:
+                        # Semi-transparent dark overlay
+                        overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
+                        overlay_alpha[:] = BLACK
+                        alpha = 0.6
+
+                        # Numpad container (GREEN theme)
+                        numpad_width  = 300
+                        numpad_height = 360
+                        numpad_x      = (w - numpad_width) // 2
+                        numpad_y      = (h - numpad_height) // 2 + 40
+
+                        # Background & border for numpad
+                        cv2.rectangle(frame,
+                                    (numpad_x, numpad_y),
+                                    (numpad_x + numpad_width, numpad_y + numpad_height),
+                                    DARK_GREEN, thickness=-1)
+                        cv2.rectangle(frame,
+                                    (numpad_x, numpad_y),
+                                    (numpad_x + numpad_width, numpad_y + numpad_height),
+                                    MEDIUM_GREEN, thickness=2)
+
+                        # Draw active field's current value at top
+                        active_field = overlay_data.get("active_move_field")
+                        active_value = overlay_data.get(f"move_target_{active_field}", "0")
+                        field_label = active_field.upper() if active_field else ""
+                        
+                        cv2.putText(frame, f"{field_label}: {active_value}",
+                                    (numpad_x + 10, numpad_y + 40),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
+
+                        # Numpad buttons (4×4 grid)
+                        buttons = [
+                            ("1", numpad_x + 10,  numpad_y + 70),
+                            ("2", numpad_x + 80,  numpad_y + 70),
+                            ("3", numpad_x + 150, numpad_y + 70),
+                            ("",  numpad_x + 220, numpad_y + 70),
+
+                            ("4", numpad_x + 10,  numpad_y + 140),
+                            ("5", numpad_x + 80,  numpad_y + 140),
+                            ("6", numpad_x + 150, numpad_y + 140),
+                            ("",  numpad_x + 220, numpad_y + 140),
+
+                            ("7", numpad_x + 10,  numpad_y + 210),
+                            ("8", numpad_x + 80,  numpad_y + 210),
+                            ("9", numpad_x + 150, numpad_y + 210),
+                            ("",  numpad_x + 220, numpad_y + 210),
+
+                            (".",  numpad_x + 10,  numpad_y + 280),
+                            ("0",  numpad_x + 80,  numpad_y + 280),
+                            ("C",  numpad_x + 150, numpad_y + 280),
+                            ("OK", numpad_x + 220, numpad_y + 280),
+                        ]
+
+                        btn_width  = 60
+                        btn_height = 50
+                        for txt, bx, by in buttons:
+                            if txt == "":
+                                continue
+                            # Button background = DARK_GREEN, border = MEDIUM_GREEN
+                            cv2.rectangle(frame,
+                                        (bx, by),
+                                        (bx + btn_width, by + btn_height),
+                                        DARK_GREEN, thickness=-1)
+                            cv2.rectangle(frame,
+                                        (bx, by),
+                                        (bx + btn_width, by + btn_height),
+                                        MEDIUM_GREEN, thickness=2)
+
+                            # Text centered in button (WHITE)
+                            (tw, th), _ = cv2.getTextSize(txt,
+                                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                                        0.8, 2)
+                            text_x = bx + (btn_width - tw) // 2
+                            text_y = by + (btn_height + th) // 2
+                            cv2.putText(frame, txt, (text_x, text_y),
+                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.8, WHITE, 2, cv2.LINE_AA)
 
                 # Convert frame to GStreamer buffer as before...
                 data = frame.tobytes()
