@@ -459,7 +459,7 @@ class StreamServer:
             "move_target_x": "0",
             "move_target_y": "0", 
             "move_target_height": "0",
-            "active_move_field": None,  # "x", "y", or "height"
+            "active_move_field": None,
             "move_numpad_flag": 0,
         }
 
@@ -500,29 +500,29 @@ class StreamServer:
                         with open(move_numpad_path, "r") as f:
                             pad = json.load(f)
                             overlay_data["move_numpad_flag"] = int(pad.get("numpad_flag", 0))
-                            pressed = pad.get("digit", "")
-                            if overlay_data["move_numpad_flag"] == 1 and overlay_data["active_move_field"]:
-                                fld = overlay_data["active_move_field"]
-                                field_key = f"move_target_{fld}"
-                                cur = overlay_data.get(field_key, "")
-                                if pressed == "C":
-                                    overlay_data[field_key] = ""
-                                elif pressed == "OK":
-                                    overlay_data["move_numpad_flag"] = 0  # Close numpad
-                                    # Write back to move_to_target.json
-                                    with open(move_to_target_path, "w") as f:
-                                        json.dump({
-                                            "move_to_target_flag": overlay_data["move_to_target_flag"],
-                                            "active_field": overlay_data["active_move_field"],
-                                            "x": overlay_data["move_target_x"],
-                                            "y": overlay_data["move_target_y"],
-                                            "height": overlay_data["move_target_height"]
-                                        }, f)
-                                else:
-                                    if cur == "":
-                                        overlay_data[field_key] = str(pressed)
-                                    else:
-                                        overlay_data[field_key] = cur + str(pressed)
+                            # pressed = pad.get("digit", "")
+                            # if overlay_data["move_numpad_flag"] == 1 and overlay_data["active_move_field"]:
+                            #     fld = overlay_data["active_move_field"]
+                            #     field_key = f"move_target_{fld}"
+                            #     cur = overlay_data.get(field_key, "")
+                            #     if pressed == "C":
+                            #         overlay_data[field_key] = ""
+                            #     elif pressed == "OK":
+                            #         overlay_data["move_numpad_flag"] = 0  # Close numpad
+                            #         # Write back to move_to_target.json
+                            #         with open(move_to_target_path, "w") as f:
+                            #             json.dump({
+                            #                 "move_to_target_flag": overlay_data["move_to_target_flag"],
+                            #                 "active_field": overlay_data["active_move_field"],
+                            #                 "x": overlay_data["move_target_x"],
+                            #                 "y": overlay_data["move_target_y"],
+                            #                 "height": overlay_data["move_target_height"]
+                            #             }, f)
+                            #     else:
+                            #         if cur == "":
+                            #             overlay_data[field_key] = str(pressed)
+                            #         else:
+                            #             overlay_data[field_key] = cur + str(pressed)
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to read move numpad data: {e}")
 
@@ -2002,23 +2002,24 @@ class StreamServer:
                                 (margin_left + menu_width, margin_top + menu_height),
                                 MEDIUM_GREEN, thickness=2)
 
-                    # Title
-                    title_text = "Move to Target"
-                    font_scale = 1.2
-                    thickness = 2
-                    (text_width, text_height), _ = cv2.getTextSize(title_text,
-                                                                cv2.FONT_HERSHEY_SIMPLEX,
-                                                                font_scale, thickness)
-                    title_x = margin_left + (menu_width - text_width) // 2
-                    title_y = margin_top + 40
-                    cv2.putText(frame, title_text, (title_x, title_y),
-                                cv2.FONT_HERSHEY_SIMPLEX, font_scale,
-                                BLACK, thickness + 2, cv2.LINE_AA)  # Black outline
-                    cv2.putText(frame, title_text, (title_x, title_y),
-                                cv2.FONT_HERSHEY_SIMPLEX, font_scale,
-                                WHITE, thickness, cv2.LINE_AA)
+                    # # Title
+                    # title_text = "Move to Target"
+                    # font_scale = 1.2
+                    # thickness = 2
+                    # (text_width, text_height), _ = cv2.getTextSize(title_text,
+                    #                                             cv2.FONT_HERSHEY_SIMPLEX,
+                    #                                             font_scale, thickness)
+                    # title_x = margin_left + (menu_width - text_width) // 2
+                    # title_y = margin_top + 40
+                    # cv2.putText(frame, title_text, (title_x, title_y),
+                    #             cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                    #             BLACK, thickness + 2, cv2.LINE_AA)  # Black outline
+                    # cv2.putText(frame, title_text, (title_x, title_y),
+                    #             cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                    #             WHITE, thickness, cv2.LINE_AA)
 
                     # Input fields
+                    title_y = margin_top + 40
                     input_height = 40
                     input_y_start = title_y + 30
                     field_spacing = 60
@@ -2142,7 +2143,7 @@ class StreamServer:
                         active_value = overlay_data.get(f"move_target_{active_field}", "0")
                         field_label = active_field.upper() if active_field else ""
                         
-                        cv2.putText(frame, f"{field_label}: {active_value}",
+                        cv2.putText(frame, str(active_value),
                                     (numpad_x + 10, numpad_y + 40),
                                     cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
 
