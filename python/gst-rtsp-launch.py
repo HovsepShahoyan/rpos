@@ -461,6 +461,9 @@ class StreamServer:
             "move_target_height": "0",
             "active_move_field": None,
             "move_numpad_flag": 0,
+            "nc_xy_mode": 0,
+            "nc_x_value": "0",
+            "nc_y_value": "0",
         }
 
         log.debug(f"[DEBUG] Initialized overlay data: {overlay_data}")
@@ -668,9 +671,12 @@ class StreamServer:
                             last_menu_mtime = current_menu_mtime
                             with open(menu_path, "r") as f:
                                 menu_data = json.load(f)
-                                overlay_data["menu_flag"] = int(menu_data.get("Flag"))
+                                overlay_data["menu_flag"] = int(menu_data.get("Flag", 0))
+                                overlay_data["nc_xy_mode"] = int(menu_data.get("nc_xy_mode", 0))
+                                overlay_data["nc_x_value"] = str(menu_data.get("nc_x_value", "0"))
+                                overlay_data["nc_y_value"] = str(menu_data.get("nc_y_value", "0"))
                 except Exception as e:
-                    log.warning(f"[Overlay Watcher] Failed to read menu flag data: {e}")
+                    log.warning(f"[Overlay Watcher] Failed to read menu overlay data: {e}")
 
                 try:
                     # Check if the overlay file has been modified
@@ -1321,6 +1327,24 @@ class StreamServer:
                     margin_top = 10
                     margin_left = 10
 
+                    xy_mode = overlay_data.get("nc_xy_mode", 0)
+
+                    if xy_mode:
+                        field1_label = "X:"
+                        field2_label = "Y:"
+                        field1_value = overlay_data.get("nc_x_value", "0")
+                        field2_value = overlay_data.get("nc_y_value", "0")
+                    else:
+                        field1_label = "Field "
+                        field2_label = "Field"
+                        field1_value = overlay_data.get("field1_value", "0")
+                        field2_value = overlay_data.get("field2_value", "0")
+                    
+                    menu_width = 400
+                    menu_height = 300
+                    margin_top = 10
+                    margin_left = 10
+
                     # Background (dark green fill, medium green border)
                     cv2.rectangle(frame,
                                   (margin_left, margin_top),
@@ -1377,13 +1401,13 @@ class StreamServer:
                                   (field1_rect[0], field1_rect[1]),
                                   (field1_rect[0] + field1_rect[2], field1_rect[1] + field1_rect[3]),
                                   field1_color, thickness=-1)
-                    cv2.putText(frame, "Field 1:",
+                    cv2.putText(frame, field1_label,
                                 (field1_rect[0] - 80, field1_rect[1] + field1_rect[3] // 2 + 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2)
-                    # Display current value
-                    cv2.putText(frame, overlay_data.get("field1_value", "0"),
+                    cv2.putText(frame, field1_value,
                                 (field1_rect[0] + 10, field1_rect[1] + field1_rect[3] // 2 + 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+
 
                     # Field 2
                     field2_rect = (
@@ -1397,13 +1421,38 @@ class StreamServer:
                                   (field2_rect[0], field2_rect[1]),
                                   (field2_rect[0] + field2_rect[2], field2_rect[1] + field2_rect[3]),
                                   field2_color, thickness=-1)
-                    cv2.putText(frame, "Field 2:",
+                    cv2.putText(frame, field2_label,
                                 (field2_rect[0] - 80, field2_rect[1] + field2_rect[3] // 2 + 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2)
-                    # Display current value
-                    cv2.putText(frame, overlay_data.get("field2_value", "0"),
+                    cv2.putText(frame, field2_value,
                                 (field2_rect[0] + 10, field2_rect[1] + field2_rect[3] // 2 + 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+
+                    # Draw toggle button (centered below the input fields)
+                    toggle_btn_x = margin_left + (menu_width - 120) // 2
+                    toggle_btn_y = field2_rect[1] + field2_rect[3] + 20
+                    toggle_btn_w = 120
+                    toggle_btn_h = 50
+
+                    # Draw filled rectangle (background) - always MEDIUM_GREEN like NorthConnect
+                    cv2.rectangle(frame, (toggle_btn_x, toggle_btn_y),
+                                (toggle_btn_x + toggle_btn_w, toggle_btn_y + toggle_btn_h),
+                                MEDIUM_GREEN, thickness=-1)
+
+                    # Draw border - always DARK_GREEN like NorthConnect
+                    cv2.rectangle(frame, (toggle_btn_x, toggle_btn_y),
+                                (toggle_btn_x + toggle_btn_w, toggle_btn_y + toggle_btn_h),
+                                DARK_GREEN, thickness=2)
+
+                    # Draw the text (white with black outline, centered)
+                    toggle_text = "XY" if not xy_mode else "Angle"
+                    (text_w, text_h), _ = cv2.getTextSize(toggle_text, cv2.FONT_HERSHEY_SIMPLEX, 1.2, 3)
+                    text_x = toggle_btn_x + (toggle_btn_w - text_w) // 2
+                    text_y = toggle_btn_y + (toggle_btn_h + text_h) // 2
+                    cv2.putText(frame, toggle_text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.2, BLACK, 4, cv2.LINE_AA)   # Black outline
+                    cv2.putText(frame, toggle_text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.2, WHITE, 2, cv2.LINE_AA)   # White text
 
                     # Draw menu‐numpad (if Field 1 or Field 2 is active)
                     if overlay_data.get("field1Flag", 0) == 1 or overlay_data.get("field2Flag", 0) == 1:
@@ -1430,11 +1479,18 @@ class StreamServer:
                                       MEDIUM_GREEN, thickness=2)
 
                         # Draw active field’s current value at top (WHITE text on dark green)
-                        active_value = (
-                            overlay_data.get("field1_value", "0")
-                            if overlay_data.get("field1Flag", 0) == 1
-                            else overlay_data.get("field2_value", "0")
-                        )
+                        if xy_mode:
+                            active_value = (
+                                overlay_data.get("nc_x_value", "0")
+                                if overlay_data.get("field1Flag", 0) == 1
+                                else overlay_data.get("nc_y_value", "0")
+                            )
+                        else:
+                            active_value = (
+                                overlay_data.get("field1_value", "0")
+                                if overlay_data.get("field1Flag", 0) == 1
+                                else overlay_data.get("field2_value", "0")
+                            )
                         cv2.putText(frame, active_value,
                                     (numpad_x + 10, numpad_y + 40),
                                     cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
