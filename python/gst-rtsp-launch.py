@@ -253,7 +253,7 @@ class StreamServer:
             log.error(f"Error reading codec configuration: {e}")
             global_codec = "h264"
     
-    def start_opencv_overlay_stream(self, mount_name, rtsp_input_url, overlay_path):
+    def start_opencv_overlay_stream(self, mount_name, rtsp_input_url, overlay_path, pip_source=None):
         import cv2
         import numpy as np
         import os
@@ -295,6 +295,10 @@ class StreamServer:
         if not cap or not cap.isOpened():
             log.error(f"[ERROR] Cannot open H.264 RTSP stream: {rtsp_input_url}")
             raise Exception(f"[ERROR] Cannot open H.264 RTSP stream: {rtsp_input_url}")
+        
+        cap_stream_raw = None                 # lazy-opened VideoCapture for pip source
+        last_pip_open_attempt = 0.0
+        pip_open_backoff = 2.0  
         
         log.debug(f"[DEBUG] Successfully opened H.264 RTSP stream: {rtsp_input_url}")
 
@@ -772,7 +776,8 @@ class StreamServer:
                 netowork_config_img = cv2.imread(network_config_img_path, cv2.IMREAD_UNCHANGED)
 
             def push_frame(_appsrc, _):
-                nonlocal frame_count, last_push_time, cap, overlay
+                nonlocal frame_count, last_push_time, cap, overlay, cap_stream_raw, last_pip_open_attempt
+
                 start_time = time.time()
 
                 # Grab frame with improved retry logic
@@ -852,6 +857,67 @@ class StreamServer:
 
                 # ... rest of the code remains the same ...
                 # Draw text overlays with improved efficiency
+
+                # --- PIP logic for altstream <-> stream (lazy open, backoff, adjustable sizes) ---
+                if pip_source:
+                    try:
+                        # Try to open the pip capture lazily (with backoff)
+                        if (cap_stream_raw is None or not cap_stream_raw.isOpened()) and (time.time() - last_pip_open_attempt) > pip_open_backoff:
+                            last_pip_open_attempt = time.time()
+                            # Use a GStreamer pipeline for robust RTSP decoding (adjust if you prefer FFMPEG)
+                            pip_gst = (
+                                f'rtspsrc location={pip_source} latency=0 ! '
+                                f'rtph264depay ! h264parse ! nvv4l2decoder ! '
+                                f'queue max-size-buffers=3 leaky=downstream ! '
+                                f'nvvidconv ! video/x-raw,format=BGRx ! appsink drop=true max-buffers=2 sync=false'
+                            )
+                            try:
+                                cap_stream_raw = cv2.VideoCapture(pip_gst, cv2.CAP_GSTREAMER)
+                                cap_stream_raw.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                                if not cap_stream_raw.isOpened():
+                                    log.warning("[PIP] cap_stream_raw not opened after attempt")
+                                    try: cap_stream_raw.release()
+                                    except: pass
+                                    cap_stream_raw = None
+                            except Exception as e:
+                                log.warning(f"[PIP] exception when opening pip_source: {e}")
+                                cap_stream_raw = None
+
+                        # If opened, read one frame and paste it
+                        if cap_stream_raw is not None and cap_stream_raw.isOpened():
+                            ret2, raw_stream_frame = cap_stream_raw.read()
+                            if not ret2 or raw_stream_frame is None:
+                                # quick failure: release and try again later
+                                try: cap_stream_raw.release()
+                                except: pass
+                                cap_stream_raw = None
+                            else:
+                                # Choose PIP size depending on which mount we are in:
+                                # - in /altstream we want a larger PIP of /stream
+                                # - in /stream we want a smaller PIP of /altstream
+                                if mount_name == "altstream":
+                                    pip_h, pip_w = 240, 320   # increased thumbnail for altstream (change as desired)
+                                else:
+                                    pip_h, pip_w = 140, 200   # small thumbnail for stream (change as desired)
+
+                                try:
+                                    pip_frame = cv2.resize(raw_stream_frame, (pip_w, pip_h))
+                                    # Paste into top-right corner with 10px margin
+                                    x_offset = frame.shape[1] - pip_w - 10
+                                    y_offset = 10
+                                    frame[y_offset:y_offset+pip_h, x_offset:x_offset+pip_w] = pip_frame
+                                except Exception as e:
+                                    log.warning(f"[PIP] failed to paste/resize pip frame: {e}")
+
+                    except Exception as e:
+                        log.warning(f"[PIP] unexpected error: {e}")
+                        try:
+                            if cap_stream_raw is not None:
+                                cap_stream_raw.release()
+                        except:
+                            pass
+                        cap_stream_raw = None
+                # --- end PIP logic ---
 
                 # --- Digital Zoom: Read and update from /tmp/digital_zoom.json, handle zoom_in_flag/zoom_out_flag ---
                 digital_zoom_path = "/tmp/digital_zoom.json"
@@ -2482,17 +2548,24 @@ class StreamServer:
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
             wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:3333/")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.33:3333/stream", "/tmp/active_cross1.png")
-
+            self.start_opencv_overlay_stream(
+                "stream",
+                "rtsp://admin:Aragats777@192.168.0.33:3333/stream",
+                "/tmp/active_cross1.png",
+                pip_source="rtsp://admin:Aragats777@192.168.0.33:1111/")
+            
             wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.33:1111/", "/tmp/active_cross2.png")
-
+            self.start_opencv_overlay_stream(
+                "altstream",
+                "rtsp://admin:Aragats777@192.168.0.33:1111/",
+                "/tmp/active_cross2.png",
+                pip_source="rtsp://admin:Aragats777@192.168.0.33:3333/stream")
+            
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
             self.mainthread.daemon = True
             self.mainthread.start()
             self.running = True
-
 
         finally:
             cam_mutex.release()
@@ -2547,5 +2620,3 @@ if __name__ == '__main__':
     #if (i == 0):
     streamServer.launch()
     streamServer.start()
-
-
