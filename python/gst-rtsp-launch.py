@@ -423,6 +423,7 @@ class StreamServer:
         screenshot_path = "/tmp/screenshot_flag.json"
         move_to_target_path = "/tmp/move_to_target.json"
         move_numpad_path = "/tmp/move_numpad.json"
+        pip_toggle_path = "/tmp/pip_toggle.json"
         log.debug(f"[DEBUG] Overlay data paths: {coords_path}, {gps_path}, {angles_path}, {hyusis_path}")
 
         # Initialize overlay data
@@ -468,6 +469,7 @@ class StreamServer:
             "nc_xy_mode": 0,
             "nc_x_value": "0",
             "nc_y_value": "0",
+            "pip_visible": 0,
         }
 
         log.debug(f"[DEBUG] Initialized overlay data: {overlay_data}")
@@ -489,6 +491,20 @@ class StreamServer:
             last_coords_mtime = 0
             last_network_mtime = 0
             while True:
+                # PIP toggle (external controller can write {"pip_visible": 0} or {"pip_visible": 1})
+                try:
+                    if os.path.exists(pip_toggle_path):
+                        with open(pip_toggle_path, "r") as f:
+                            pip_cfg = json.load(f)
+                        # tolerate strings or ints; default to current overlay value (which we set to 0)
+                        try:
+                            overlay_data["pip_visible"] = int(pip_cfg.get("pip_visible", overlay_data.get("pip_visible", 0)))
+                        except Exception:
+                            val = pip_cfg.get("pip_visible", overlay_data.get("pip_visible", 0))
+                            overlay_data["pip_visible"] = 1 if str(val).strip().lower() in ("1", "true", "yes") else 0
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read pip_toggle.json: {e}")
+
                 # Move to Target
                 try:
                     if os.path.exists(move_to_target_path):
@@ -859,7 +875,7 @@ class StreamServer:
                 # Draw text overlays with improved efficiency
 
                 # --- PIP logic for altstream <-> stream (lazy open, backoff, adjustable sizes) ---
-                if pip_source:
+                if pip_source and overlay_data.get("pip_visible", 0) == 1:
                     try:
                         # Try to open the pip capture lazily (with backoff)
                         if (cap_stream_raw is None or not cap_stream_raw.isOpened()) and (time.time() - last_pip_open_attempt) > pip_open_backoff:
@@ -892,13 +908,10 @@ class StreamServer:
                                 except: pass
                                 cap_stream_raw = None
                             else:
-                                # Choose PIP size depending on which mount we are in:
-                                # - in /altstream we want a larger PIP of /stream
-                                # - in /stream we want a smaller PIP of /altstream
                                 if mount_name == "altstream":
-                                    pip_h, pip_w = 240, 320   # increased thumbnail for altstream (change as desired)
+                                    pip_h, pip_w = 300, 400 
                                 else:
-                                    pip_h, pip_w = 140, 200   # small thumbnail for stream (change as desired)
+                                    pip_h, pip_w = 300, 400 
 
                                 try:
                                     pip_frame = cv2.resize(raw_stream_frame, (pip_w, pip_h))
@@ -985,7 +998,6 @@ class StreamServer:
                     # Draw text
                     cv2.putText(frame, onvif_time_str, (x, y), font, font_scale, BLACK, 3, cv2.LINE_AA)
                     cv2.putText(frame, onvif_time_str, (x, y), font, font_scale, DARK_GREEN, 2, cv2.LINE_AA)
-
 
                 # 1. Camera Coordinates (X and Y) - Yellow, Top-Right
                 camera_coords_label = "Camera Coordinates"
@@ -1153,7 +1165,6 @@ class StreamServer:
                                 text_color=(240,240,0))
 
                 # BUTTON 0 - Screenshot (Left of Button 1)
-                # ...existing code...
                 button0_w, button0_h = rect_width, rect_height
                 button0_x = button1_top_left_x - horizontal_spacing - button0_w
                 button0_y = button1_top_left_y
@@ -1317,6 +1328,65 @@ class StreamServer:
                                     f"{i + 1}. {name}",
                                     (panel_x + 20, y),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
+
+                # ------------------ PIP Toggle Button (same visual style as other buttons) ------------------
+                try:
+                    # Use existing layout values
+                    pip_btn_w, pip_btn_h = rect_width, rect_height
+
+                    # Slightly more left shift than before so it sits nicely
+                    pip_btn_x = button4_x + button4_w + horizontal_spacing - 30   # <- moved left by 30px
+                    pip_btn_y = button1_top_left_y
+
+                    pip_is_on = overlay_data.get("pip_visible", 0) == 1
+
+                    # colors keep the same style as other buttons
+                    fill_col = DARK_TURQUOISE if pip_is_on else (80, 80, 80)
+                    border_col = MEDIUM_TURQUOISE if pip_is_on else (160, 160, 160)
+                    text_col = WHITE
+
+                    # background + border
+                    cv2.rectangle(frame,
+                                (pip_btn_x, pip_btn_y),
+                                (pip_btn_x + pip_btn_w, pip_btn_y + pip_btn_h),
+                                fill_col, thickness=-1)
+                    cv2.rectangle(frame,
+                                (pip_btn_x, pip_btn_y),
+                                (pip_btn_x + pip_btn_w, pip_btn_y + pip_btn_h),
+                                border_col, thickness=2)
+
+                    # small state icon (keeps left margin)
+                    icon_w = 16
+                    icon_padding_left = 8
+                    icon_x = pip_btn_x + icon_padding_left
+                    icon_y = pip_btn_y + (pip_btn_h - icon_w) // 2
+                    icon_col = (0, 200, 0) if pip_is_on else (0, 0, 200)
+                    cv2.rectangle(frame, (icon_x, icon_y), (icon_x + icon_w, icon_y + icon_w), icon_col, -1)
+                    cv2.rectangle(frame, (icon_x, icon_y), (icon_x + icon_w, icon_y + icon_w), (20, 20, 20), 1)
+
+                    # label text moved to the right of the icon so they don't overlap
+                    label = "PIP"
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    fs = 0.7
+                    thickness = 2
+                    # compute text start x after icon + small gap
+                    text_start_x = icon_x + icon_w + 12   # 12 px gap after icon
+                    # center the text in the remaining space to the right (optional)
+                    remaining_w = (pip_btn_x + pip_btn_w) - text_start_x - 8  # 8px right padding
+                    (tw, th), _ = cv2.getTextSize(label, font, fs, thickness)
+                    # if label wider than remaining, clamp left and allow overflow clip
+                    if tw > remaining_w:
+                        tx = text_start_x
+                    else:
+                        tx = text_start_x + (remaining_w - tw) // 2
+                    ty = pip_btn_y + (pip_btn_h + th) // 2 - 3
+
+                    # shadow then text
+                    cv2.putText(frame, label, (tx+1, ty+1), font, fs, (0,0,0), thickness+1, cv2.LINE_AA)
+                    cv2.putText(frame, label, (tx, ty), font, fs, text_col, thickness, cv2.LINE_AA)
+
+                except Exception as e:
+                    log.warning(f"[UI] Failed to draw adjusted PIP toggle button: {e}")
 
                 # ── Delete logic ────────────────────────────────────────────────────────
                 if overlay_data.get("delete_marker_flag", 0) == 1:
