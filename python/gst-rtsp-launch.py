@@ -1045,7 +1045,6 @@ class StreamServer:
                 #             cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
                 # cv2.putText(frame, angle_label, (w//2 - 200, 30),
                 #             cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
-                
 
                 h, w = frame.shape[:2]
 

@@ -15,6 +15,7 @@ var MediaService = require("./services/media_service");
 var PTZService = require("./services/ptz_service");
 var ImagingService = require("./services/imaging_service");
 var DiscoveryService = require("./services/discovery_service");
+var LoginTracker = require("./lib/loginTracker");
 var process_1 = require("process");
 var utils = utils_1.Utils.utils;
 var pjson = require("./package.json");
@@ -23,6 +24,14 @@ var ptr = 0;
 var remaining = process.argv.length;
 ptr += 2;
 remaining -= 2;
+
+const users = {
+  admin: { password: 'admin', role: 'admin' },
+  user1: { password: 'user1', role: 'user' }
+  // add more users as needed
+};
+
+
 console.log("\n✅✅✅ RPOS started — console.log IS WORKING ✅✅✅\n");
 while (remaining > 0) {
     if (process.argv[ptr] == '--help' || process.argv[ptr] == '-h') {
@@ -118,13 +127,40 @@ webserver.get('/login', function(req, res) {
 
 webserver.post('/login', function(req, res) {
   const { username, password } = req.body;
-  if (username === 'admin' && password === 'admin') {
+  const ipAddress = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || (req.connection.socket ? req.connection.socket.remoteAddress : null);
+
+  // Look up user
+  const userRecord = users[username];
+  if (userRecord && userRecord.password === password) {
+    // Successful login
     req.session.authenticated = true;
+    // store username and role in session
+    req.session.user = { username: username, role: userRecord.role };
+    loginTracker.logAttempt(username, true, ipAddress);
     res.redirect('/');
   } else {
+    // Failed login
+    loginTracker.logAttempt(username, false, ipAddress);
     res.redirect('/login?error=1');
   }
 });
+
+webserver.get('/api/loginAttempts', function (req, res) {
+  // Require admin role
+  if (!req.session || !req.session.user || req.session.user.role !== 'admin') {
+    // Optionally log attempts to access logs by non-admins
+    console.warn('Unauthorized attempt to access /api/loginAttempts from', req.ip, 'sessionUser=', req.session && req.session.user);
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const filePath = '/tmp/login_attempts.json';
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.status(404).json({ error: "login_attempts.json not found" });
+  }
+});
+
 httpserver.listen(config.ServicePort);
 var ptz_driver = new PTZDriver(config);
 var camera = new Camera(config, webserver);
@@ -133,6 +169,8 @@ var ptz_service = new PTZService(config, httpserver, ptz_driver.process_ptz_comm
 var imaging_service = new ImagingService(config, httpserver, ptz_driver.process_ptz_command);
 var media_service = new MediaService(config, httpserver, camera, ptz_service);
 var discovery_service = new DiscoveryService(config);
+var loginTracker = new LoginTracker();
+
 device_service.start();
 media_service.start();
 ptz_service.start();
