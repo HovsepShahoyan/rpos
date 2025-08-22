@@ -232,7 +232,7 @@ class StreamServer:
 
         factory.connect("media-configure", on_media_configure)
         return factory
-    
+
     def read_codec_config(self):
         global global_codec
         try:
@@ -253,6 +253,49 @@ class StreamServer:
             log.error(f"Error reading codec configuration: {e}")
             global_codec = "h264"
     
+    def _parse_resolution(res):
+        if res is None:
+            return None
+        try:
+            if isinstance(res, (list, tuple)) and len(res) >= 2:
+                return int(res[0]), int(res[1])
+            if isinstance(res, str):
+                parts = res.lower().strip().split("x")
+                if len(parts) == 2:
+                    return int(parts[0]), int(parts[1])
+        except Exception:
+            return None
+        return None
+
+    def read_resolution_config(self):
+        global global_resolution
+        cfg = "/tmp/resolution.json"
+        try:
+            if os.path.exists(cfg):
+                with open(cfg, "r") as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and "width" in data and "height" in data:
+                    try:
+                        w = int(data["width"])
+                        h = int(data["height"])
+                        # sanity bounds (optional; adjust if you want)
+                        if 1 <= w <= 7680 and 1 <= h <= 4320:
+                            global_resolution = (w, h)
+                            log.info(f"Resolution configuration loaded: {global_resolution}")
+                            return
+                        else:
+                            log.warning(f"Resolution values out of bounds in {cfg}: {(w,h)}; ignoring.")
+                    except Exception as e:
+                        log.warning(f"Invalid width/height types in {cfg}: {e}; ignoring.")
+                else:
+                    log.warning(f"Invalid format for {cfg}; expected {{'width':W,'height':H}}")
+            else:
+                log.info("No resolution configuration file found, using defaults")
+        except Exception as e:
+            log.error(f"Error reading resolution configuration: {e}")
+        global_resolution = None
+
+        
     def start_opencv_overlay_stream(self, mount_name, rtsp_input_url, overlay_path, pip_source=None):
         import cv2
         import numpy as np
@@ -262,145 +305,164 @@ class StreamServer:
         import time
         from gi.repository import Gst, GstRtspServer
 
-        global global_codec
+        global global_codec, global_resolution
+
+        # read runtime configs (codec + resolution)
         self.read_codec_config()
+        # read_resolution_config() must set global_resolution to (w,h) or None
+        try:
+            self.read_resolution_config()
+        except Exception:
+            # defensive: if read_resolution_config not present or fails, continue with None
+            global_resolution = None
+
         log.debug(f"[DEBUG] Starting OpenCV overlay stream for mount: {mount_name}")
         log.debug(f"[DEBUG] RTSP input URL: {rtsp_input_url}")
         log.debug(f"[DEBUG] Overlay path: {overlay_path}")
-        
+        log.debug(f"[DEBUG] runtime config -> codec: {global_codec}, resolution(file): {global_resolution}")
+
         # Initialize GStreamer
         Gst.init(None)
-        
-        # Always assume input is H.264 and convert to H.265 output
-        if mount_name == "stream":
-            gst_pipeline = (
-                f'rtspsrc location={rtsp_input_url} latency=0 ! '
-                f'rtph264depay ! h264parse ! nvv4l2decoder ! '
-                f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
-                f'nvvidconv ! video/x-raw, format=BGRx, width=1350, height=1080 !'
-                f'appsink drop=true max-buffers=3 sync=false'
-            )
+
+        # Legacy default values
+        legacy_input_w, legacy_input_h = 1350, 1080  # what you said stream provides
+        legacy_canvas_w, legacy_canvas_h = 1920, 1080  # the canvas you create by padding
+
+        # Determine requested canvas/output size from JSON (global_resolution) or use legacy defaults
+        if isinstance(global_resolution, tuple) and len(global_resolution) == 2:
+            out_w, out_h = int(global_resolution[0]), int(global_resolution[1])
         else:
-            gst_pipeline = (
-                f'rtspsrc location={rtsp_input_url} latency=0 ! '
-                f'rtph264depay ! h264parse ! nvv4l2decoder ! '
-                f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
-                f'nvvidconv ! video/x-raw, format=BGRx ! '
-                f'appsink drop=true max-buffers=3 sync=false'
-            )
+            out_w, out_h = (legacy_canvas_w, legacy_canvas_h)
+
+        # Decide decode (capture) request to include in the VideoCapture pipeline:
+        # - For mount "stream": keep the legacy input size (1350x1080) and pad to out_w/out_h with videobox.
+        # - For other mounts: ask the decoder to output the configured canvas size (out_w,out_h).
+        if mount_name == "stream":
+            decode_req_w, decode_req_h = legacy_input_w, legacy_input_h
+            # appsrc will push frames of legacy_input_w x legacy_input_h (what OpenCV reads)
+            appsrc_w, appsrc_h = legacy_input_w, legacy_input_h
+            # compute videobox padding to center input into canvas
+            pad_left = pad_right = pad_top = pad_bottom = 0
+            if out_w > appsrc_w:
+                pad_total_x = out_w - appsrc_w
+                pad_left = pad_right = pad_total_x // 2
+            if out_h > appsrc_h:
+                pad_total_y = out_h - appsrc_h
+                pad_top = pad_bottom = pad_total_y // 2
+            use_videobox = (pad_left or pad_right or pad_top or pad_bottom)
+        else:
+            # For altstream and other mounts: request decode and appsrc to use out_w/out_h
+            decode_req_w, decode_req_h = out_w, out_h
+            appsrc_w, appsrc_h = out_w, out_h
+            pad_left = pad_right = pad_top = pad_bottom = 0
+            use_videobox = False
+
+        # Build capture pipeline (rtspsrc -> decode -> nvvidconv -> appsink)
+        decode_caps_part = ""
+        if decode_req_w and decode_req_h:
+            decode_caps_part = f", width={int(decode_req_w)}, height={int(decode_req_h)}"
+
+        gst_pipeline = (
+            f'rtspsrc location={rtsp_input_url} latency=0 ! '
+            f'rtph264depay ! h264parse ! nvv4l2decoder ! '
+            f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
+            f'nvvidconv ! video/x-raw, format=BGRx{decode_caps_part} ! '
+            f'appsink drop=true max-buffers=3 sync=false'
+        )
 
         log.debug(f"[DEBUG] Using H.264 input pipeline: {gst_pipeline}")
         cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
-
         if not cap or not cap.isOpened():
             log.error(f"[ERROR] Cannot open H.264 RTSP stream: {rtsp_input_url}")
             raise Exception(f"[ERROR] Cannot open H.264 RTSP stream: {rtsp_input_url}")
-        
+
         cap_stream_raw = None                 # lazy-opened VideoCapture for pip source
         last_pip_open_attempt = 0.0
-        pip_open_backoff = 2.0  
-        
+        pip_open_backoff = 2.0
+
         log.debug(f"[DEBUG] Successfully opened H.264 RTSP stream: {rtsp_input_url}")
 
-        # Get video properties
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        if mount_name == "altstream":
-            width = 1920
-            height = 1080
-        elif mount_name == "stream":
-            width = 1350
-            height = 1080
+        # Read what OpenCV sees (may differ if decoder ignored requested caps)
+        actual_cap_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or appsrc_w
+        actual_cap_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or appsrc_h
 
-        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25  # Target FPS
-
-        log.debug(f"[DEBUG] Camera resolution: {width}x{height}, FPS: {fps}")
-
-        if global_codec == "h265":
-            if mount_name == "stream": 
-                pipeline_str = (
-                    f"appsrc name=source is-live=true do-timestamp=true format=time "
-                    f"caps=video/x-raw,format=BGRx,width=1350,height=1080,framerate={fps}/1 "
-                    f"! queue max-size-buffers=3 leaky=downstream "
-                    f"! videobox left=-285 right=-285 border-alpha=0 "
-                    f"! video/x-raw,width=1920,height=1080 "
-                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
-                    f"! nvv4l2h265enc preset-level=MediumPreset bitrate=8000000 "
-                    f"control-rate=variable-bitrate iframeinterval=30 insert-sps-pps=1 "
-                    f"insert-vui=1 insert-aud=1 "
-                    f"! h265parse config-interval=1 "
-                    f"! rtph265pay name=pay0 pt=96 config-interval=1 mtu=1400"
-                )
-            else:
-                pipeline_str = (
-                    f"appsrc name=source is-live=true do-timestamp=true format=time "
-                    f"caps=video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
-                    f"! queue max-size-buffers=3 leaky=downstream "
-                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
-                    f"! nvv4l2h265enc preset-level=MediumPreset bitrate=8000000 "
-                    f"control-rate=variable-bitrate iframeinterval=30 insert-sps-pps=1 "
-                    f"insert-vui=1 insert-aud=1 "
-                    f"! h265parse config-interval=1 "
-                    f"! rtph265pay name=pay0 pt=96 config-interval=1 mtu=1400"
-                )
-
-        elif global_codec == "mpeg":
-            if mount_name == "stream": 
-                pipeline_str = (
-                    f"appsrc name=source is-live=true do-timestamp=true format=time "
-                    f"caps=video/x-raw,format=BGRx,width=1350,height=1080,framerate={fps}/1 "
-                    f"! queue max-size-buffers=3 leaky=downstream "
-                    f"! videobox left=-285 right=-285 border-alpha=0 "
-                    f"! video/x-raw,width=1920,height=1080 "
-                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
-                    f"! nvv4l2mpeg4enc bitrate=8000000 iframeinterval=30 "
-                    f"control-rate=variable-bitrate preset-level=MediumPreset "
-                    f"! mpeg4videoparse "
-                    f"! rtpmp4vpay name=pay0 pt=96 config-interval=1 mtu=1400"
-                )
-            else:
-                pipeline_str = (
-                    f"appsrc name=source is-live=true do-timestamp=true format=time "
-                    f"caps=video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
-                    f"! queue max-size-buffers=3 leaky=downstream "
-                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
-                    f"! nvv4l2mpeg4enc bitrate=8000000 iframeinterval=30 "
-                    f"control-rate=variable-bitrate preset-level=MediumPreset "
-                    f"! mpeg4videoparse "
-                    f"! rtpmp4vpay name=pay0 pt=96 config-interval=1 mtu=1400"
-                )
+        # For stream we purposely use legacy input values for appsrc caps even if capture reports something else,
+        # since you historically forced 1350x1080 for stream workflow. If you prefer dynamic, you can switch to actual_cap_*.
+        if mount_name == "stream":
+            width = legacy_input_w
+            height = legacy_input_h
         else:
-            if mount_name == "stream": 
-                pipeline_str = (
-                    f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
-                    f"latency=0 sync=false "
-                    f"! video/x-raw,format=BGRx,width=1350,height=1080,framerate={fps}/1 "
-                    f"! videobox left=-285 right=-285 border-alpha=0 "
-                    f"! video/x-raw,width=1920,height=1080 "
-                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
-                    f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
-                    f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
-                    f"profile=baseline iframeinterval=25 bitrate=4096000 tune=zerolatency "
-                    f"insert-sps-pps=1 "
-                    f"! h264parse "
-                    f"! rtph264pay name=pay0 pt=96 config-interval=0"
-                )
-            else:
-                pipeline_str = (
-                    f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
-                    f"latency=0 sync=false "
-                    f"! video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
-                    f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
-                    f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,framerate={fps}/1 "
-                    f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
-                    f"profile=baseline iframeinterval=25 bitrate=4096000 tune=zerolatency "
-                    f"insert-sps-pps=1 "
-                    f"! h264parse "
-                    f"! rtph264pay name=pay0 pt=96 config-interval=0"
-                )
+            width = actual_cap_w
+            height = actual_cap_h
 
+        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25
+        log.debug(f"[DEBUG] Camera resolution (used): {width}x{height}, FPS: {fps}; output canvas: {out_w}x{out_h}")
+
+        # Build the encoder/pipeline strings based on global_codec and mount_name, but use appsrc caps derived from width/height.
+        # Build videobox part if needed (for stream centering)
+        videobox_part = ""
+        if mount_name == "stream" and use_videobox:
+            # negative shifts to move the smaller image into the center of the larger canvas
+            videobox_part = f"! videobox left=-{pad_left} right=-{pad_right} top=-{pad_top} bottom=-{pad_bottom} border-alpha=0 ! video/x-raw,width={out_w},height={out_h} "
+        else:
+            # when scaling is required (input != output) we request output caps so nvvidconv will scale
+            if width != out_w or height != out_h:
+                videobox_part = f"! video/x-raw,width={out_w},height={out_h} "
+
+        # appsrc caps reflect the frames OpenCV will push (BGRx)
+        appsrc_caps = f"video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1"
+
+        # Build encoder/payload depending on codec (kept your original encoder options)
+        if global_codec == "h265":
+            encoder_segment = (
+                f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
+                f"! nvv4l2h265enc preset-level=MediumPreset bitrate=8000000 "
+                f"control-rate=variable-bitrate iframeinterval=30 insert-sps-pps=1 "
+                f"insert-vui=1 insert-aud=1 "
+                f"! h265parse config-interval=1 "
+                f"! rtph265pay name=pay0 pt=96 config-interval=1 mtu=1400"
+            )
+        elif global_codec == "mpeg":
+            encoder_segment = (
+                f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
+                f"! nvv4l2mpeg4enc bitrate=8000000 iframeinterval=30 "
+                f"control-rate=variable-bitrate preset-level=MediumPreset "
+                f"! mpeg4videoparse "
+                f"! rtpmp4vpay name=pay0 pt=96 config-interval=1 mtu=1400"
+            )
+        else:
+            # default h264
+            encoder_segment = (
+                f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,framerate={fps}/1 "
+                f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
+                f"profile=baseline iframeinterval=25 bitrate=4096000 tune=zerolatency "
+                f"insert-sps-pps=1 "
+                f"! h264parse "
+                f"! rtph264pay name=pay0 pt=96 config-interval=0"
+            )
+
+        # Compose final pipeline_str. For 'stream' you previously used block=true / videobox; keep similar semantics.
+        if mount_name == "stream":
+            # keep block=true for deterministic push (preserve original)
+            pipeline_str = (
+                f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
+                f"latency=0 sync=false "
+                f"caps={appsrc_caps} "
+                f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
+                f"{videobox_part}"
+                f"{encoder_segment}"
+            )
+        else:
+            pipeline_str = (
+                f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
+                f"latency=0 sync=false "
+                f"caps={appsrc_caps} "
+                f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
+                f"{encoder_segment}"
+            )
 
         log.debug(f"[DEBUG] GStreamer pipeline: {pipeline_str}")
+
 
         # Create and configure the media factory
         factory = GstRtspServer.RTSPMediaFactory()
