@@ -40,7 +40,8 @@
 "enc_deg_movement_el":1,
 "deg_step_movement_el":28,
 "step_deg_movement_el":-14409,
-"range_finder":false}
+"range_finder":false,
+"default_configuration":false}
 ,
 "CodecControls":
 {
