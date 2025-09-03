@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
   // A H.264 video elementary stream:
   {
     char const* streamName = argc > 4 ? argv[5] : ""; 
-	if(streamName == NULL)
+	if (streamName == NULL)
 		streamName = "";
     char const* inputFileName = argv[1];
 

@@ -695,6 +695,24 @@ class StreamServer:
                     log.warning(f"[Overlay Watcher] presets numpad error: {e}")
 
                 try:
+                    presets_positions_path = "/tmp/presets_positions.json"
+                    if os.path.exists(presets_positions_path):
+                        with open(presets_positions_path, "r") as f:
+                            pos_data = json.load(f)
+                        # Build a list for panel display (10 slots, default None)
+                        positions = [{"x": None, "y": None} for _ in range(10)]
+                        for idx_str, entry in pos_data.items():
+                            idx = int(idx_str)
+                            if 0 <= idx < 10:
+                                positions[idx] = {
+                                    "x": int(entry.get("X", 0)),
+                                    "y": int(entry.get("Y", 0))
+                                }
+                        overlay_data["presets_positions"] = positions
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read presets_positions: {e}")
+
+                try:
                     if os.path.exists(network_path):
                         current_network_mtime = os.path.getmtime(network_path)
                         if current_network_mtime != last_network_mtime:
@@ -1346,11 +1364,9 @@ class StreamServer:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
 
                 if overlay_data.get("presets_flag", 0) == 1:
-                    # Panel dimensions & position
-                    panel_w, panel_h = 350, 550  # increased height to fit 10 entries
+                    panel_w, panel_h = 520, 550  # wider panel
                     panel_x = w - panel_w - 10
-                    panel_y = 80  # move panel slightly up so it’s centered
-                    # Background & border
+                    panel_y = 80
                     cv2.rectangle(frame,
                                 (panel_x, panel_y),
                                 (panel_x + panel_w, panel_y + panel_h),
@@ -1359,7 +1375,6 @@ class StreamServer:
                                 (panel_x, panel_y),
                                 (panel_x + panel_w, panel_y + panel_h),
                                 MEDIUM_GREEN, thickness=2)
-                    # “Add Marker” button
                     btn_h = 50
                     add_btn_y = panel_y + 20
                     cv2.rectangle(frame,
@@ -1369,7 +1384,6 @@ class StreamServer:
                     cv2.putText(frame, "Add Marker",
                                 (panel_x + 20, add_btn_y + btn_h // 2 + 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
-                    # “Delete Marker” button
                     del_btn_y = add_btn_y + btn_h + 10
                     cv2.rectangle(frame,
                                 (panel_x + 10, del_btn_y),
@@ -1378,17 +1392,27 @@ class StreamServer:
                     cv2.putText(frame, "Delete Marker",
                                 (panel_x + 20, del_btn_y + btn_h // 2 + 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
-                    # List of 10 markers
-                    slot_h = 30
-                    slots_start_y = del_btn_y + btn_h + 30  # extra padding so list sits well below buttons
+                    slot_h = 34
+                    slots_start_y = del_btn_y + btn_h + 30
                     for i in range(10):
                         y = slots_start_y + i * (slot_h + 8)
-                        name = overlay_data["markers"][i] # or f"<empty {i + 1}>"
+                        name = overlay_data["markers"][i]
                         color = MEDIUM_GREEN if i == overlay_data["current_preset_index"] else WHITE
+                        # Show marker name (left side)
                         cv2.putText(frame,
                                     f"{i + 1}. {name}",
                                     (panel_x + 20, y),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
+                        # Show coordinates (right side, same height)
+                        if "presets_positions" in overlay_data and i < len(overlay_data["presets_positions"]):
+                            pos = overlay_data["presets_positions"][i]
+                            if pos.get("x") is not None and pos.get("y") is not None:
+                                coord_text = f"X:{pos['x']} Y:{pos['y']}"
+                                # Right align: start near right edge, minus text width and padding
+                                (tw, th), _ = cv2.getTextSize(coord_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                                coord_x = panel_x + panel_w - tw - 30
+                                cv2.putText(frame, coord_text, (coord_x, y),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
 
                 # ------------------ PIP Toggle Button (same visual style as other buttons) ------------------
                 try:
