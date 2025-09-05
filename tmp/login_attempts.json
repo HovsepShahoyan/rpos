@@ -1,5 +1,11 @@
 [
   {
+    "timestamp": "2025-09-03T10:33:54.092Z",
+    "username": "admin",
+    "success": true,
+    "ipAddress": "::ffff:192.168.0.104"
+  },
+  {
     "timestamp": "2025-08-25T10:44:53.516Z",
     "username": "admin",
     "success": true,

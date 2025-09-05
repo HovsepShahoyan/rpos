@@ -96,6 +96,7 @@ var webserver = express();
 var httpserver = http.createServer(webserver);
 
 webserver.use(bodyParser.urlencoded({ extended: false }));
+webserver.use(bodyParser.json());
 webserver.use(session({
   secret: 'rpos_secret_key',
   resave: false,
@@ -159,6 +160,21 @@ webserver.get('/api/loginAttempts', function (req, res) {
   } else {
     res.status(404).json({ error: "login_attempts.json not found" });
   }
+});
+
+webserver.post('/api/updateCameraName', (req, res) => {
+    const name = req.body.name;
+    if (!name) return res.json({ success: false, error: 'No name provided' });
+    try {
+        let configData = fs.readFileSync(configFile, 'utf8');
+        let configJson = JSON.parse(configData);
+        if (!configJson.DeviceInformation) configJson.DeviceInformation = {};
+        configJson.DeviceInformation.Model = name;
+        fs.writeFileSync(configFile, JSON.stringify(configJson, null, 2));
+        res.json({ success: true });
+    } catch (e) {
+        return res.json({ success: false, error: 'Failed to update config' });
+    }
 });
 
 httpserver.listen(config.ServicePort);
