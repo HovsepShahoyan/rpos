@@ -889,6 +889,10 @@ class StreamServer:
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     time.sleep(0.001)
 
+                # After: ret, frame = cap.read()
+                if frame.shape[1] != 1920 or frame.shape[0] != 1080:
+                    frame = cv2.resize(frame, (1920, 1080), interpolation=cv2.INTER_LINEAR)
+
                 if not ret or frame is None:
                     log.error("[Overlay] Failed to grab frame after retries")
                     return
@@ -2471,6 +2475,9 @@ class StreamServer:
                             cv2.putText(frame, txt, (text_x, text_y),
                                         cv2.FONT_HERSHEY_SIMPLEX,
                                         0.8, WHITE, 2, cv2.LINE_AA)
+
+                if (out_w, out_h) != (1920, 1080):
+                    frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
 
                 # Convert frame to GStreamer buffer as before...
                 data = frame.tobytes()

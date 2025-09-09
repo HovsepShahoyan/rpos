@@ -1,10 +1,10 @@
 {
   "network_flag": 0,
   "activeField": null,
-  "ip_address": "192.168.0.86",
+  "ip_address": "192.168.0.10",
   "subnet_mask": "255.255.255.0",
   "gateway": "192.168.0.1",
   "DNS1": "8.8.8.8",
-  "DNS2": "8.8.8.4",
+  "DNS2": "8.8.4.4",
   "numpad_flag": 0
 }
