@@ -325,37 +325,16 @@ class StreamServer:
         Gst.init(None)
 
         # Legacy default values
-        legacy_input_w, legacy_input_h = 1350, 1080  # what you said stream provides
-        legacy_canvas_w, legacy_canvas_h = 1920, 1080  # the canvas you create by padding
-
-        # Determine requested canvas/output size from JSON (global_resolution) or use legacy defaults
+        default_w, default_h = 1920, 1080
         if isinstance(global_resolution, tuple) and len(global_resolution) == 2:
             out_w, out_h = int(global_resolution[0]), int(global_resolution[1])
         else:
-            out_w, out_h = (legacy_canvas_w, legacy_canvas_h)
+            out_w, out_h = default_w, default_h
 
-        # Decide decode (capture) request to include in the VideoCapture pipeline:
-        # - For mount "stream": keep the legacy input size (1350x1080) and pad to out_w/out_h with videobox.
-        # - For other mounts: ask the decoder to output the configured canvas size (out_w,out_h).
-        if mount_name == "stream":
-            decode_req_w, decode_req_h = legacy_input_w, legacy_input_h
-            # appsrc will push frames of legacy_input_w x legacy_input_h (what OpenCV reads)
-            appsrc_w, appsrc_h = legacy_input_w, legacy_input_h
-            # compute videobox padding to center input into canvas
-            pad_left = pad_right = pad_top = pad_bottom = 0
-            if out_w > appsrc_w:
-                pad_total_x = out_w - appsrc_w
-                pad_left = pad_right = pad_total_x // 2
-            if out_h > appsrc_h:
-                pad_total_y = out_h - appsrc_h
-                pad_top = pad_bottom = pad_total_y // 2
-            use_videobox = (pad_left or pad_right or pad_top or pad_bottom)
-        else:
-            # For altstream and other mounts: request decode and appsrc to use out_w/out_h
-            decode_req_w, decode_req_h = out_w, out_h
-            appsrc_w, appsrc_h = out_w, out_h
-            pad_left = pad_right = pad_top = pad_bottom = 0
-            use_videobox = False
+        # For both stream and altstream: decode and appsrc use out_w/out_h, no padding
+        decode_req_w, decode_req_h = out_w, out_h
+        appsrc_w, appsrc_h = out_w, out_h
+        use_videobox = False
 
         # Build capture pipeline (rtspsrc -> decode -> nvvidconv -> appsink)
         decode_caps_part = ""
@@ -388,12 +367,9 @@ class StreamServer:
 
         # For stream we purposely use legacy input values for appsrc caps even if capture reports something else,
         # since you historically forced 1350x1080 for stream workflow. If you prefer dynamic, you can switch to actual_cap_*.
-        if mount_name == "stream":
-            width = legacy_input_w
-            height = legacy_input_h
-        else:
-            width = actual_cap_w
-            height = actual_cap_h
+        width = actual_cap_w
+        height = actual_cap_h
+
 
         fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25
         log.debug(f"[DEBUG] Camera resolution (used): {width}x{height}, FPS: {fps}; output canvas: {out_w}x{out_h}")
@@ -401,14 +377,9 @@ class StreamServer:
         # Build the encoder/pipeline strings based on global_codec and mount_name, but use appsrc caps derived from width/height.
         # Build videobox part if needed (for stream centering)
         videobox_part = ""
-        if mount_name == "stream" and use_videobox:
-            # negative shifts to move the smaller image into the center of the larger canvas
-            videobox_part = f"! videobox left=-{pad_left} right=-{pad_right} top=-{pad_top} bottom=-{pad_bottom} border-alpha=0 ! video/x-raw,width={out_w},height={out_h} "
-        else:
-            # when scaling is required (input != output) we request output caps so nvvidconv will scale
-            if width != out_w or height != out_h:
-                videobox_part = f"! video/x-raw,width={out_w},height={out_h} "
-
+  
+        if width != out_w or height != out_h:
+            videobox_part = f"! video/x-raw,width={out_w},height={out_h} "
         # appsrc caps reflect the frames OpenCV will push (BGRx)
         appsrc_caps = f"video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1"
 
@@ -2476,7 +2447,7 @@ class StreamServer:
                                         cv2.FONT_HERSHEY_SIMPLEX,
                                         0.8, WHITE, 2, cv2.LINE_AA)
 
-                if (out_w, out_h) != (1920, 1080):
+                if (frame.shape[1], frame.shape[0]) != (out_w, out_h):
                     frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
 
                 # Convert frame to GStreamer buffer as before...
