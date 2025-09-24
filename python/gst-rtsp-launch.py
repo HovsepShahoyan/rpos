@@ -342,7 +342,7 @@ class StreamServer:
             decode_caps_part = f", width={int(decode_req_w)}, height={int(decode_req_h)}"
 
         gst_pipeline = (
-            f'rtspsrc location={rtsp_input_url} latency=0 ! '
+            f'rtspsrc location={rtsp_input_url} protocols=tcp  latency=0 ! '
             f'rtph264depay ! h264parse ! nvv4l2decoder ! '
             f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
             f'nvvidconv ! video/x-raw, format=BGRx{decode_caps_part} ! '
@@ -937,7 +937,7 @@ class StreamServer:
                             last_pip_open_attempt = time.time()
                             # Use a GStreamer pipeline for robust RTSP decoding (adjust if you prefer FFMPEG)
                             pip_gst = (
-                                f'rtspsrc location={pip_source} latency=0 ! '
+                                f'rtspsrc location={pip_source}  protocols=tcp  latency=0 ! '
                                 f'rtph264depay ! h264parse ! nvv4l2decoder ! '
                                 f'queue max-size-buffers=3 leaky=downstream ! '
                                 f'nvvidconv ! video/x-raw,format=BGRx ! appsink drop=true max-buffers=2 sync=false'
@@ -2660,15 +2660,15 @@ class StreamServer:
 
             # Replace both GStreamer pipelines with OpenCV overlays
             # Wait until OpenCV is able to fetch frames, blocking startup until ready
-            def wait_for_opencv_ready(rtsp_url, max_attempts=10):
+            def wait_for_opencv_ready(rtsp_url, max_attempts=50):
                 import cv2, time
                 for attempt in range(max_attempts):
                     gst_pipeline = (
-                        f'rtspsrc location={rtsp_url} latency=50 ! '
+                        f'rtspsrc location={rtsp_url} protocols=tcp  latency=0 ! '
                         f'rtph264depay ! h264parse ! nvv4l2decoder ! '
                         f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
-                        f'nvvidconv ! video/x-raw, format=RGBA ! '
-                        f'appsink drop=true max-buffers=1 sync=false'
+                        f'nvvidconv ! video/x-raw, format=BGRx ! '
+                        f'appsink drop=true max-buffers=3 sync=false'
                     )
                     cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
 
@@ -2680,19 +2680,19 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:3333/")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/stream")
             self.start_opencv_overlay_stream(
                 "stream",
-                "rtsp://admin:Aragats777@192.168.0.33:3333/stream",
+                "rtsp://admin:Aragats777@192.168.0.21:3333/stream",
                 "/tmp/active_cross1.png",
-                pip_source="rtsp://admin:Aragats777@192.168.0.33:1111/")
+                pip_source="rtsp://admin:Aragats777@192.168.0.21:1111/")
             
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.33:1111/")
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:1111/")
             self.start_opencv_overlay_stream(
                 "altstream",
-                "rtsp://admin:Aragats777@192.168.0.33:1111/",
+                "rtsp://admin:Aragats777@192.168.0.21:1111/",
                 "/tmp/active_cross2.png",
-                pip_source="rtsp://admin:Aragats777@192.168.0.33:3333/stream")
+                pip_source="rtsp://admin:Aragats777@192.168.0.21:3333/stream")
             
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)

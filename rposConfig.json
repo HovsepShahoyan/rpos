@@ -38,7 +38,7 @@
   "PTZCameraAddress": 1,
   "DeviceInformation": {
     "Manufacturer": "Aragats",
-    "Model": "Aragats Onvif Camera",
+    "Model": "Aragats ",
     "HardwareId": ""
   },
   "logLevel": 3,
