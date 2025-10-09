@@ -307,13 +307,10 @@ class StreamServer:
 
         global global_codec, global_resolution
 
-        # read runtime configs (codec + resolution)
         self.read_codec_config()
-        # read_resolution_config() must set global_resolution to (w,h) or None
         try:
             self.read_resolution_config()
         except Exception:
-            # defensive: if read_resolution_config not present or fails, continue with None
             global_resolution = None
 
         log.debug(f"[DEBUG] Starting OpenCV overlay stream for mount: {mount_name}")
@@ -321,22 +318,18 @@ class StreamServer:
         log.debug(f"[DEBUG] Overlay path: {overlay_path}")
         log.debug(f"[DEBUG] runtime config -> codec: {global_codec}, resolution(file): {global_resolution}")
 
-        # Initialize GStreamer
         Gst.init(None)
 
-        # Legacy default values
         default_w, default_h = 1920, 1080
         if isinstance(global_resolution, tuple) and len(global_resolution) == 2:
             out_w, out_h = int(global_resolution[0]), int(global_resolution[1])
         else:
             out_w, out_h = default_w, default_h
 
-        # For both stream and altstream: decode and appsrc use out_w/out_h, no padding
         decode_req_w, decode_req_h = out_w, out_h
         appsrc_w, appsrc_h = out_w, out_h
         use_videobox = False
 
-        # Build capture pipeline (rtspsrc -> decode -> nvvidconv -> appsink)
         decode_caps_part = ""
         if decode_req_w and decode_req_h:
             decode_caps_part = f", width={int(decode_req_w)}, height={int(decode_req_h)}"
@@ -355,18 +348,15 @@ class StreamServer:
             log.error(f"[ERROR] Cannot open H.264 RTSP stream: {rtsp_input_url}")
             raise Exception(f"[ERROR] Cannot open H.264 RTSP stream: {rtsp_input_url}")
 
-        cap_stream_raw = None                 # lazy-opened VideoCapture for pip source
+        cap_stream_raw = None                
         last_pip_open_attempt = 0.0
         pip_open_backoff = 2.0
 
         log.debug(f"[DEBUG] Successfully opened H.264 RTSP stream: {rtsp_input_url}")
 
-        # Read what OpenCV sees (may differ if decoder ignored requested caps)
         actual_cap_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or appsrc_w
         actual_cap_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or appsrc_h
 
-        # For stream we purposely use legacy input values for appsrc caps even if capture reports something else,
-        # since you historically forced 1350x1080 for stream workflow. If you prefer dynamic, you can switch to actual_cap_*.
         width = actual_cap_w
         height = actual_cap_h
 
@@ -374,16 +364,12 @@ class StreamServer:
         fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25
         log.debug(f"[DEBUG] Camera resolution (used): {width}x{height}, FPS: {fps}; output canvas: {out_w}x{out_h}")
 
-        # Build the encoder/pipeline strings based on global_codec and mount_name, but use appsrc caps derived from width/height.
-        # Build videobox part if needed (for stream centering)
         videobox_part = ""
   
         if width != out_w or height != out_h:
             videobox_part = f"! video/x-raw,width={out_w},height={out_h} "
-        # appsrc caps reflect the frames OpenCV will push (BGRx)
         appsrc_caps = f"video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1"
 
-        # Build encoder/payload depending on codec (kept your original encoder options)
         if global_codec == "h265":
             encoder_segment = (
                 f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
@@ -402,7 +388,6 @@ class StreamServer:
                 f"! rtpmp4vpay name=pay0 pt=96 config-interval=1 mtu=1400"
             )
         else:
-            # default h264
             encoder_segment = (
                 f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,framerate={fps}/1 "
                 f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
@@ -412,9 +397,7 @@ class StreamServer:
                 f"! rtph264pay name=pay0 pt=96 config-interval=0"
             )
 
-        # Compose final pipeline_str. For 'stream' you previously used block=true / videobox; keep similar semantics.
         if mount_name == "stream":
-            # keep block=true for deterministic push (preserve original)
             pipeline_str = (
                 f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
                 f"latency=0 sync=false "
@@ -434,14 +417,11 @@ class StreamServer:
 
         log.debug(f"[DEBUG] GStreamer pipeline: {pipeline_str}")
 
-
-        # Create and configure the media factory
         factory = GstRtspServer.RTSPMediaFactory()
         factory.set_launch(pipeline_str)
         factory.set_shared(True)
         log.debug(f"[DEBUG] Successfully created and configured GStreamer media factory")
 
-        # Define paths for overlay data
         coords_path = f"/tmp/overlay_coords1.json" if mount_name == "stream" else f"/tmp/overlay_coords2.json"
         gps_path = "/tmp/overlay_coords.json"
         angles_path = "/tmp/overlay_angles.json"
@@ -459,7 +439,6 @@ class StreamServer:
         pip_toggle_path = "/tmp/pip_toggle.json"
         log.debug(f"[DEBUG] Overlay data paths: {coords_path}, {gps_path}, {angles_path}, {hyusis_path}")
 
-        # Initialize overlay data
         overlay_data = {
             "x": None,
             "y": None,
@@ -489,7 +468,7 @@ class StreamServer:
             "presets_flag":      0,
             "add_marker_flag":   0,
             "delete_marker_flag":0,
-            "current_preset_index": 0,     # 0–9
+            "current_preset_index": 0,
             "marker_name":       "",
             "markers":           [""] * 10,
             "screenshot_flag": 0,
@@ -507,7 +486,6 @@ class StreamServer:
 
         log.debug(f"[DEBUG] Initialized overlay data: {overlay_data}")
 
-        # Preload overlay image with size adjustment for "stream"
         overlay = None
         if os.path.exists(overlay_path):
             overlay = cv2.imread(overlay_path, cv2.IMREAD_UNCHANGED)
@@ -516,7 +494,6 @@ class StreamServer:
 
         onvif_time_str = ""
 
-        # File watcher thread with improved timing
         def file_watcher():
             nonlocal overlay
             last_overlay_mtime = 0
@@ -524,12 +501,10 @@ class StreamServer:
             last_coords_mtime = 0
             last_network_mtime = 0
             while True:
-                # PIP toggle (external controller can write {"pip_visible": 0} or {"pip_visible": 1})
                 try:
                     if os.path.exists(pip_toggle_path):
                         with open(pip_toggle_path, "r") as f:
                             pip_cfg = json.load(f)
-                        # tolerate strings or ints; default to current overlay value (which we set to 0)
                         try:
                             overlay_data["pip_visible"] = int(pip_cfg.get("pip_visible", overlay_data.get("pip_visible", 0)))
                         except Exception:
@@ -538,7 +513,6 @@ class StreamServer:
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to read pip_toggle.json: {e}")
 
-                # Move to Target
                 try:
                     if os.path.exists(move_to_target_path):
                         with open(move_to_target_path, "r") as f:
@@ -556,33 +530,9 @@ class StreamServer:
                         with open(move_numpad_path, "r") as f:
                             pad = json.load(f)
                             overlay_data["move_numpad_flag"] = int(pad.get("numpad_flag", 0))
-                            # pressed = pad.get("digit", "")
-                            # if overlay_data["move_numpad_flag"] == 1 and overlay_data["active_move_field"]:
-                            #     fld = overlay_data["active_move_field"]
-                            #     field_key = f"move_target_{fld}"
-                            #     cur = overlay_data.get(field_key, "")
-                            #     if pressed == "C":
-                            #         overlay_data[field_key] = ""
-                            #     elif pressed == "OK":
-                            #         overlay_data["move_numpad_flag"] = 0  # Close numpad
-                            #         # Write back to move_to_target.json
-                            #         with open(move_to_target_path, "w") as f:
-                            #             json.dump({
-                            #                 "move_to_target_flag": overlay_data["move_to_target_flag"],
-                            #                 "active_field": overlay_data["active_move_field"],
-                            #                 "x": overlay_data["move_target_x"],
-                            #                 "y": overlay_data["move_target_y"],
-                            #                 "height": overlay_data["move_target_height"]
-                            #             }, f)
-                            #     else:
-                            #         if cur == "":
-                            #             overlay_data[field_key] = str(pressed)
-                            #         else:
-                            #             overlay_data[field_key] = cur + str(pressed)
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to read move numpad data: {e}")
 
-                # Check menu flag file
                 try:
                     if os.path.exists(screenshot_path):
                         with open(screenshot_path, "r") as f:
@@ -591,7 +541,6 @@ class StreamServer:
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to read screenshot flag: {e}")
 
-                # Inside file_watcher() while loop:
                 try:
                     if os.path.exists(presets_path):
                         with open(presets_path, "r") as f:
@@ -601,10 +550,8 @@ class StreamServer:
                         overlay_data["add_marker_flag"] = int(p.get("add_marker_flag", 0))
                         overlay_data["delete_marker_flag"] = int(p.get("delete_marker_flag", 0))
                         overlay_data["markers"] = p.get("markers", [""] * 10)
-                        # Initialize marker_name when add_marker_flag is set
                         if overlay_data["add_marker_flag"] == 1:
                             overlay_data["marker_name"] = ""
-                        #log.debug(f"[DEBUG] Loaded presets.json → add_marker_flag={overlay_data['add_marker_flag']}")
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to read presets: {e}")
 
@@ -615,7 +562,6 @@ class StreamServer:
                     if os.path.exists(onvif_time_path):
                         with open(onvif_time_path, "r") as f:
                             onvif_time_data = json.load(f)
-                        # Compose overlay string, e.g. "2025-07-08 14:23:45 UTC+3"
                         onvif_time_str = f"{onvif_time_data.get('local', '')} {onvif_time_data.get('timezone', '')}"
                 except Exception as e:
                     onvif_time_str = "ONVIF time unavailable"
@@ -630,12 +576,10 @@ class StreamServer:
                             if digit == "C":
                                 overlay_data["marker_name"] = ""
                             elif digit == "OK":
-                                # Save marker into the current slot
                                 idx = overlay_data["current_preset_index"]
                                 overlay_data["markers"][idx] = overlay_data["marker_name"]
                                 overlay_data["marker_name"] = ""
-                                overlay_data["add_marker_flag"] = 0  # Reset the flag
-                                # Persist everything back to presets.json
+                                overlay_data["add_marker_flag"] = 0
                                 with open(presets_path, "w") as pf:
                                     json.dump({
                                         "presets_flag": overlay_data["presets_flag"],
@@ -645,12 +589,8 @@ class StreamServer:
                                         "markers": overlay_data["markers"],
                                     }, pf)
                             else:
-                                # Append digit or dot
                                 overlay_data["marker_name"] += digit
-                            # Reset the numpad flag after processing
 
-
-                            # —— Persist the updated name so next frame still sees it —— 
                             with open(presets_path, "w") as pf:
                                 json.dump({
                                     "presets_flag":         overlay_data["presets_flag"],
@@ -660,8 +600,6 @@ class StreamServer:
                                     "markers":              overlay_data["markers"],
                                     "marker_name":          overlay_data["marker_name"]
                                 }, pf, indent=2)
-                            # with open(presets_numpad_path, "w") as f:
-                            #     json.dump({"numpad_flag": 0, "digit": ""}, f)  # Reset the digit
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] presets numpad error: {e}")
 
@@ -670,7 +608,6 @@ class StreamServer:
                     if os.path.exists(presets_positions_path):
                         with open(presets_positions_path, "r") as f:
                             pos_data = json.load(f)
-                        # Build a list for panel display (10 slots, default None)
                         positions = [{"x": None, "y": None} for _ in range(10)]
                         for idx_str, entry in pos_data.items():
                             idx = int(idx_str)
@@ -712,10 +649,9 @@ class StreamServer:
                                 if pressed == "C":
                                     overlay_data[fld] = ""
                                 elif pressed == "OK":
-                                    overlay_data["numpad_flag"] = 0  # Close numpad
-                                    # Optionally write back to network.json here to freeze the value.
+                                    overlay_data["numpad_flag"] = 0
                                 else:
-                                    if cur == "":  # Only append if current value is empty
+                                    if cur == "":
                                         overlay_data[fld] = str(pressed)
                                     else:
                                         overlay_data[fld] = cur + str(pressed)
@@ -750,18 +686,15 @@ class StreamServer:
                     log.warning(f"[Overlay Watcher] Failed to read menu overlay data: {e}")
 
                 try:
-                    # Check if the overlay file has been modified
                     if os.path.exists(overlay_path):
                         current_mtime = os.path.getmtime(overlay_path)
                         if current_mtime != last_overlay_mtime:
                             last_overlay_mtime = current_mtime
-                            # Reload the overlay image
                             overlay = cv2.imread(overlay_path, cv2.IMREAD_UNCHANGED)
                             log.debug(f"[DEBUG] Reloaded overlay image: {overlay_path}")
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to reload overlay image: {e}")
 
-                # Check crosshair coordinates
                 try:
                     if os.path.exists(coords_path):
                         current_coords_mtime = os.path.getmtime(coords_path)
@@ -779,7 +712,6 @@ class StreamServer:
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to reload crosshair coordinates: {e}")
 
-                # Check other files...
                 try:
                     if os.path.exists(gps_path):
                         with open(gps_path, "r") as f:
@@ -818,12 +750,11 @@ class StreamServer:
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to read Hyusis data: {e}")
 
-                time.sleep(0.05)  # Adjusted for better performance
+                time.sleep(0.05)
 
         watcher_thread = threading.Thread(target=file_watcher, daemon=True)
         watcher_thread.start()
 
-        # Media configuration callback with optimizations
         def on_configure(factory, media):
             appsrc = media.get_element().get_child_by_name("source")
             frame_count = 0
@@ -847,9 +778,8 @@ class StreamServer:
 
                 start_time = time.time()
 
-                # Grab frame with improved retry logic
                 retry_counter = 0
-                while retry_counter < 3:  # Reduced retries for lower latency
+                while retry_counter < 3:
                     ret, frame = cap.read()
                     if ret and frame is not None:
                         break
@@ -860,7 +790,6 @@ class StreamServer:
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     time.sleep(0.001)
 
-                # After: ret, frame = cap.read()
                 if frame.shape[1] != 1920 or frame.shape[0] != 1080:
                     frame = cv2.resize(frame, (1920, 1080), interpolation=cv2.INTER_LINEAR)
 
@@ -868,22 +797,17 @@ class StreamServer:
                     log.error("[Overlay] Failed to grab frame after retries")
                     return
 
-                # Calculate processing time
                 processing_time = time.time() - start_time
                 processing_times.append(processing_time)
 
-                # Calculate FPS
                 if len(processing_times) > 10:
                     avg_pt = sum(processing_times) / len(processing_times)
                     fps_estimate = 1 / avg_pt
-                    # log.info(f"[INFO] Estimated FPS: {fps_estimate:.2f}")
                     processing_times.pop(0)
 
-                # Apply overlay if available
                 if overlay is not None:
                     h, w = frame.shape[:2]
                     
-                    # Original resolution (based on mount_name)
                     if mount_name == "stream":
                         original_width = 1350
                         original_height = 1080
@@ -891,19 +815,14 @@ class StreamServer:
                         original_width = 1920
                         original_height = 1080
                     
-                    # Calculate scaling factors
                     scale_x = w / original_width
                     scale_y = h / original_height
 
-                    # Get crosshair coordinates from overlay_data
                     x1 = overlay_data["x"] if overlay_data["x"] is not None else int(original_width // 2)
                     y1 = overlay_data["y"] if overlay_data["y"] is not None else int(original_height // 2)
 
-                    # Scale coordinates to match the processed frame size
                     if mount_name == "stream":
-                        # Scale x coordinate
                         x1_scaled = int(x1 * (1350 / 1920))
-                        # Scale y coordinate
                         y1_scaled = int(y1 * (1080 / 1080))
                         x1, y1 = x1_scaled, y1_scaled
                     else:
@@ -917,25 +836,10 @@ class StreamServer:
                     x2 = min(w, x1c + ow)
                     y2 = min(h, y1c + oh)
 
-                    # if x2 > x1c and y2 > y1c:
-                    #     crop = overlay[0:(y2 - y1c), 0:(x2 - x1c)]
-                    #     alpha = crop[:, :, 3] / 255.0
-                    #     for c in range(3):
-                    #         frame[y1c:y2, x1c:x2, c] = (
-                    #             alpha * crop[:, :, c] +
-                    #             (1 - alpha) * frame[y1c:y2, x1c:x2, c]
-                    #         )
-
-                # ... rest of the code remains the same ...
-                # Draw text overlays with improved efficiency
-
-                # --- PIP logic for altstream <-> stream (lazy open, backoff, adjustable sizes) ---
                 if pip_source and overlay_data.get("pip_visible", 0) == 1:
                     try:
-                        # Try to open the pip capture lazily (with backoff)
                         if (cap_stream_raw is None or not cap_stream_raw.isOpened()) and (time.time() - last_pip_open_attempt) > pip_open_backoff:
                             last_pip_open_attempt = time.time()
-                            # Use a GStreamer pipeline for robust RTSP decoding (adjust if you prefer FFMPEG)
                             pip_gst = (
                                 f'rtspsrc location={pip_source}  protocols=tcp  latency=0 ! '
                                 f'rtph264depay ! h264parse ! nvv4l2decoder ! '
@@ -954,11 +858,9 @@ class StreamServer:
                                 log.warning(f"[PIP] exception when opening pip_source: {e}")
                                 cap_stream_raw = None
 
-                        # If opened, read one frame and paste it
                         if cap_stream_raw is not None and cap_stream_raw.isOpened():
                             ret2, raw_stream_frame = cap_stream_raw.read()
                             if not ret2 or raw_stream_frame is None:
-                                # quick failure: release and try again later
                                 try: cap_stream_raw.release()
                                 except: pass
                                 cap_stream_raw = None
@@ -970,7 +872,6 @@ class StreamServer:
 
                                 try:
                                     pip_frame = cv2.resize(raw_stream_frame, (pip_w, pip_h))
-                                    # Paste into top-right corner with 10px margin
                                     x_offset = frame.shape[1] - pip_w - 10
                                     y_offset = 10
                                     frame[y_offset:y_offset+pip_h, x_offset:x_offset+pip_w] = pip_frame
@@ -985,9 +886,7 @@ class StreamServer:
                         except:
                             pass
                         cap_stream_raw = None
-                # --- end PIP logic ---
 
-                # --- Digital Zoom: Read and update from /tmp/digital_zoom.json, handle zoom_in_flag/zoom_out_flag ---
                 digital_zoom_path = "/tmp/digital_zoom.json"
                 digital_zoom = 1.0
                 zoom_changed = False
@@ -999,16 +898,13 @@ class StreamServer:
                     digital_zoom = float(dz_data.get("zoom", 1.0))
                     zoom_in_flag = int(dz_data.get("zoom_in_flag", 0))
                     zoom_out_flag = int(dz_data.get("zoom_out_flag", 0))
-                    # Handle zoom in/out flags
                     if zoom_in_flag == 1:
                         digital_zoom = min(8.0, digital_zoom + 0.2)
                         dz_data["zoom_in_flag"] = 0
-                        #dz_data["zoom"] = digital_zoom
                         zoom_changed = True
                     if zoom_out_flag == 1:
                         digital_zoom = max(1.0, digital_zoom - 0.2)
                         dz_data["zoom_out_flag"] = 0
-                        #dz_data["zoom"] = digital_zoom
                         zoom_changed = True
                     if zoom_changed:
                         with open(digital_zoom_path, "w") as f:
@@ -1017,7 +913,6 @@ class StreamServer:
                     log.warning(f"[DigitalZoom] Failed to read/update digital zoom: {e}")
                     digital_zoom = 1.0
 
-                # --- Digital Zoom: Apply zoom centered on cross position (before overlays) ---
                 h, w = frame.shape[:2]
                 if digital_zoom > 1.01:
                     cx = overlay_data["x"] if overlay_data["x"] is not None else w // 2
@@ -1031,9 +926,6 @@ class StreamServer:
                     cropped = frame[y1:y2, x1:x2]
                     frame = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
 
-                ################## BUTTONS (Green Theme) ###########################
-
-                # Define dark‐green palette
                 DARK_GREEN        = (128, 128, 0)
                 MEDIUM_GREEN      = (208, 224, 64)
                 WHITE             = (255, 255, 255)
@@ -1049,12 +941,10 @@ class StreamServer:
                     (tw, th), _ = cv2.getTextSize(onvif_time_str, font, font_scale, thickness)
                     x = 15
                     y = 40
-                    # Draw background rectangle for readability
-                    # Draw text
+
                     cv2.putText(frame, onvif_time_str, (x, y), font, font_scale, BLACK, 3, cv2.LINE_AA)
                     cv2.putText(frame, onvif_time_str, (x, y), font, font_scale, DARK_GREEN, 2, cv2.LINE_AA)
 
-                # 1. Camera Coordinates (X and Y) - Yellow, Top-Right
                 camera_coords_label = "Camera Coordinates"
                 cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
@@ -1066,44 +956,31 @@ class StreamServer:
                 cv2.putText(frame, coords_label, (w - 550, h - 20),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 2, cv2.LINE_AA)
 
-                # 2. Target Label 
                 target_label = "Target"
                 cv2.putText(frame, target_label, (20, 150),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
                 cv2.putText(frame, target_label, (20, 150),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
 
-                # 3. Delta X
                 delta_x_label = f"X: {overlay_data['delta_x']}"
                 cv2.putText(frame, delta_x_label, (20, 200),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
                 cv2.putText(frame, delta_x_label, (20, 200),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
 
-                # 4. Delta Y
                 delta_y_label = f"Y: {overlay_data['delta_y']}"
                 cv2.putText(frame, delta_y_label, (20, 250),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
                 cv2.putText(frame, delta_y_label, (20, 250),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
 
-                # 5. Distance 
                 distance_label = f"Distance: {overlay_data['D']}"
                 cv2.putText(frame, distance_label, (20, 300),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
                 cv2.putText(frame, distance_label, (20, 300),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
-
-                # 6. Azimuth and Elevation (Az and El) - Green, Top-Middle
-                # angle_label = f"AngleD: {overlay_data['az_a']} ({overlay_data['az_d_s']}°)   MestoC: {overlay_data['el_a']} ({overlay_data['el_d_s']}°)"
-                # cv2.putText(frame, angle_label, (w//2 - 200, 30),
-                #             cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
-                # cv2.putText(frame, angle_label, (w//2 - 200, 30),
-                #             cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
-
                 h, w = frame.shape[:2]
 
-                # 1. Camera Coordinates (X and Y) - keep original yellow/black outline
                 camera_coords_label = "Camera Coordinates"
                 cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
@@ -1124,9 +1001,8 @@ class StreamServer:
                 cv2.putText(frame, angle_label, (w // 2 - 300, 35),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
 
-                # Dark‐turquoise in BGR:
-                DARK_TURQUOISE   = (128, 128, 0)   # RGB (0, 128, 128) → BGR (128, 128, 0)
-                MEDIUM_TURQUOISE = (208, 224, 64)  # RGB (64, 224, 208) → BGR (208, 224, 64)
+                DARK_TURQUOISE   = (128, 128, 0)  
+                MEDIUM_TURQUOISE = (208, 224, 64) 
                 WHITE            = (255, 255, 255)
 
                 h, w = frame.shape[:2]
@@ -1136,15 +1012,11 @@ class StreamServer:
                 bottom_offset = 20
                 horizontal_spacing = 100
 
-                # Shift entire button group 400px to the left
                 button1_top_left_x = (w - rect_width) // 2 - 400
                 button1_top_left_y = h - rect_height - bottom_offset
 
-                # --- Draw overlays (cross, UI, etc) after zoom ---
-                # Draw cross overlay at original size, not zoomed
                 if overlay is not None:
                     h, w = frame.shape[:2]
-                    # Get crosshair coordinates from overlay_data (already zoomed)
                     cx = overlay_data["x"] if overlay_data["x"] is not None else w // 2
                     cy = overlay_data["y"] if overlay_data["y"] is not None else h // 2
                     oh, ow = overlay.shape[:2]
@@ -1163,7 +1035,7 @@ class StreamServer:
                             
                 dz_size    = 60
                 dz_spacing = 15
-                margin     = 10              # how far from the left edge you want your UI
+                margin     = 10
                 dz_x       = margin + dz_size // 2
                 frame_cy   = h // 2
 
@@ -1174,15 +1046,13 @@ class StreamServer:
                 def draw_square_button(cx, cy, label, font_scale, font_thickness, text_color):
                     half = dz_size // 2
 
-                    # compute square corners, then clamp to screen
                     x0 = int(cx - half)
                     y0 = int(cy - half)
-                    x0 = max(0, x0)                     # never off the left edge
-                    y0 = max(0, y0)                     # never off the top edge
+                    x0 = max(0, x0)                 
+                    y0 = max(0, y0)                    
                     x1 = x0 + dz_size
                     y1 = y0 + dz_size
 
-                    # draw background + border
                     cv2.rectangle(frame, (x0, y0), (x1, y1), DARK_TURQUOISE, -1)
                     cv2.rectangle(frame, (x0, y0), (x1, y1), MEDIUM_TURQUOISE, 2)
 
@@ -1192,7 +1062,6 @@ class StreamServer:
                                                         font_scale,
                                                         font_thickness)
 
-                    # center the text: x-center is x0 + (dz_size - tw)/2; y-center is y0 + (dz_size + th)/2 minus baseline/2
                     tx = x0 + (dz_size - tw) // 2
                     ty = y0 + (dz_size + th) // 2 - baseline // 2
 
@@ -1203,11 +1072,9 @@ class StreamServer:
                                 font_thickness,
                                 cv2.LINE_AA)
 
-                # draw the three buttons
                 draw_square_button(dz_x, minus_cy, "-",    font_scale=1.5, font_thickness=3, text_color=WHITE)
                 draw_square_button(dz_x, plus_cy,  "+",    font_scale=1.5, font_thickness=3, text_color=WHITE)
 
-                # zoom label: auto‑scale
                 zoom_label = f"x{digital_zoom:.2f}"
                 fs = 1.2
                 (thw, thh), _ = cv2.getTextSize(zoom_label, cv2.FONT_HERSHEY_SIMPLEX, fs, 3)
@@ -1218,17 +1085,14 @@ class StreamServer:
                                 font_scale=fs, font_thickness=3,
                                 text_color=(240,240,0))
 
-                # BUTTON 0 - Screenshot (Left of Button 1)
                 button0_w, button0_h = rect_width, rect_height
                 button0_x = button1_top_left_x - horizontal_spacing - button0_w
                 button0_y = button1_top_left_y
 
                 if screenshot_img is not None:
                     img_resized = cv2.resize(screenshot_img, (button0_w, button0_h))
-                    # Convert to BGRA if needed
                     if img_resized.shape[2] == 3:
                         img_resized = cv2.cvtColor(img_resized, cv2.COLOR_BGR2BGRA)
-                    # Clamp coordinates to frame bounds
                     x0 = max(0, button0_x)
                     y0 = max(0, button0_y)
                     x1 = min(w, button0_x + button0_w)
@@ -1283,10 +1147,8 @@ class StreamServer:
 
                 if netowork_config_img is not None:
                     img_resized = cv2.resize(netowork_config_img, (button3_w, button3_h))
-                    # Convert to BGRA if needed
                     if img_resized.shape[2] == 3:
                         img_resized = cv2.cvtColor(img_resized, cv2.COLOR_BGR2BGRA)
-                    # Clamp coordinates to frame bounds
                     x0 = max(0, button3_x)
                     y0 = max(0, button3_y)
                     x1 = min(w, button3_x + button3_w)
@@ -1339,7 +1201,7 @@ class StreamServer:
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
 
                 if overlay_data.get("presets_flag", 0) == 1:
-                    panel_w, panel_h = 520, 550  # wider panel
+                    panel_w, panel_h = 520, 550  
                     panel_x = w - panel_w - 10
                     panel_y = 80
                     cv2.rectangle(frame,
@@ -1373,39 +1235,32 @@ class StreamServer:
                         y = slots_start_y + i * (slot_h + 8)
                         name = overlay_data["markers"][i]
                         color = MEDIUM_GREEN if i == overlay_data["current_preset_index"] else WHITE
-                        # Show marker name (left side)
                         cv2.putText(frame,
                                     f"{i + 1}. {name}",
                                     (panel_x + 20, y),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
-                        # Show coordinates (right side, same height)
                         if "presets_positions" in overlay_data and i < len(overlay_data["presets_positions"]):
                             pos = overlay_data["presets_positions"][i]
                             if pos.get("x") is not None and pos.get("y") is not None:
                                 coord_text = f"X:{pos['x']} Y:{pos['y']}"
-                                # Right align: start near right edge, minus text width and padding
                                 (tw, th), _ = cv2.getTextSize(coord_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
                                 coord_x = panel_x + panel_w - tw - 30
                                 cv2.putText(frame, coord_text, (coord_x, y),
                                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
 
-                # ------------------ PIP Toggle Button (same visual style as other buttons) ------------------
+                # ------------------ PIP Toggle Button ------------------
                 try:
-                    # Use existing layout values
                     pip_btn_w, pip_btn_h = rect_width, rect_height
 
-                    # Slightly more left shift than before so it sits nicely
-                    pip_btn_x = button4_x + button4_w + horizontal_spacing - 30   # <- moved left by 30px
+                    pip_btn_x = button4_x + button4_w + horizontal_spacing - 30
                     pip_btn_y = button1_top_left_y
 
                     pip_is_on = overlay_data.get("pip_visible", 0) == 1
 
-                    # colors keep the same style as other buttons
                     fill_col = DARK_TURQUOISE if pip_is_on else (80, 80, 80)
                     border_col = MEDIUM_TURQUOISE if pip_is_on else (160, 160, 160)
                     text_col = WHITE
 
-                    # background + border
                     cv2.rectangle(frame,
                                 (pip_btn_x, pip_btn_y),
                                 (pip_btn_x + pip_btn_w, pip_btn_y + pip_btn_h),
@@ -1415,7 +1270,6 @@ class StreamServer:
                                 (pip_btn_x + pip_btn_w, pip_btn_y + pip_btn_h),
                                 border_col, thickness=2)
 
-                    # small state icon (keeps left margin)
                     icon_w = 16
                     icon_padding_left = 8
                     icon_x = pip_btn_x + icon_padding_left
@@ -1424,36 +1278,30 @@ class StreamServer:
                     cv2.rectangle(frame, (icon_x, icon_y), (icon_x + icon_w, icon_y + icon_w), icon_col, -1)
                     cv2.rectangle(frame, (icon_x, icon_y), (icon_x + icon_w, icon_y + icon_w), (20, 20, 20), 1)
 
-                    # label text moved to the right of the icon so they don't overlap
                     label = "PIP"
                     font = cv2.FONT_HERSHEY_SIMPLEX
                     fs = 0.7
                     thickness = 2
-                    # compute text start x after icon + small gap
-                    text_start_x = icon_x + icon_w + 12   # 12 px gap after icon
-                    # center the text in the remaining space to the right (optional)
-                    remaining_w = (pip_btn_x + pip_btn_w) - text_start_x - 8  # 8px right padding
+                    text_start_x = icon_x + icon_w + 12  
+                    remaining_w = (pip_btn_x + pip_btn_w) - text_start_x - 8  
                     (tw, th), _ = cv2.getTextSize(label, font, fs, thickness)
-                    # if label wider than remaining, clamp left and allow overflow clip
                     if tw > remaining_w:
                         tx = text_start_x
                     else:
                         tx = text_start_x + (remaining_w - tw) // 2
                     ty = pip_btn_y + (pip_btn_h + th) // 2 - 3
 
-                    # shadow then text
                     cv2.putText(frame, label, (tx+1, ty+1), font, fs, (0,0,0), thickness+1, cv2.LINE_AA)
                     cv2.putText(frame, label, (tx, ty), font, fs, text_col, thickness, cv2.LINE_AA)
 
                 except Exception as e:
                     log.warning(f"[UI] Failed to draw adjusted PIP toggle button: {e}")
 
-                # ── Delete logic ────────────────────────────────────────────────────────
+                # ── Delete ────────────────────────────────────────────────────────
                 if overlay_data.get("delete_marker_flag", 0) == 1:
                     idx = overlay_data["current_preset_index"]
                     overlay_data["markers"][idx] = ""
-                    overlay_data["delete_marker_flag"] = 0  # Reset the flag
-                    # persist
+                    overlay_data["delete_marker_flag"] = 0 
                     with open(presets_path, "w") as f:
                         json.dump({
                             "presets_flag": overlay_data["presets_flag"],
@@ -1462,13 +1310,10 @@ class StreamServer:
                             "delete_marker_flag": overlay_data["delete_marker_flag"],
                             "markers": overlay_data["markers"],
                         }, f)
-                # ── On-screen keyboard for naming new marker ───────────────────────────
                 if overlay_data.get("add_marker_flag", 0) == 1:
-                    # Darken background
                     mask = frame.copy()
                     cv2.rectangle(mask, (0, 0), (w, h), BLACK, thickness=-1)
                     cv2.addWeighted(mask, 0.6, frame, 0.4, 0, frame)
-                    # Keyboard container
                     kb_w, kb_h = 300, 360
                     kb_x, kb_y = (w - kb_w) // 2, (h - kb_h) // 2 + 40
                     cv2.rectangle(frame, (kb_x, kb_y),
@@ -1477,11 +1322,9 @@ class StreamServer:
                     cv2.rectangle(frame, (kb_x, kb_y),
                                 (kb_x + kb_w, kb_y + kb_h),
                                 MEDIUM_GREEN, thickness=2)
-                    # Current input at top
                     cv2.putText(frame, overlay_data.get("marker_name", ""),
                                 (kb_x + 10, kb_y + 40),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, WHITE, 2, cv2.LINE_AA)
-                    # 4×4 grid buttons: numbers, dot, C, OK
                     buttons = [
                         ("1", kb_x + 10, kb_y + 70),
                         ("2", kb_x + 80, kb_y + 70),
@@ -1499,7 +1342,6 @@ class StreamServer:
                     ]
                     btn_w, btn_h = 60, 50
                     for txt, bx, by in buttons:
-                        # Draw button background & border
                         cv2.rectangle(frame,
                                     (bx, by),
                                     (bx + btn_w, by + btn_h),
@@ -1508,14 +1350,13 @@ class StreamServer:
                                     (bx, by),
                                     (bx + btn_w, by + btn_h),
                                     MEDIUM_GREEN, thickness=2)
-                        # Center the text
                         (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
                         tx = bx + (btn_w - tw) // 2
                         ty = by + (btn_h + th) // 2
                         cv2.putText(frame, txt, (tx, ty),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
                 # ===========================
-                # MAIN MENU (when overlay_data["menu_flag"] == 1)
+                # MAIN MENU
                 # ===========================
                 if overlay_data.get("menu_flag", 0) == 1:
                     menu_width = 400
@@ -1541,7 +1382,6 @@ class StreamServer:
                     margin_top = 10
                     margin_left = 10
 
-                    # Background (dark green fill, medium green border)
                     cv2.rectangle(frame,
                                   (margin_left, margin_top),
                                   (margin_left + menu_width, margin_top + menu_height),
@@ -1551,7 +1391,7 @@ class StreamServer:
                                   (margin_left + menu_width, margin_top + menu_height),
                                   MEDIUM_GREEN, thickness=2)
 
-                    # NorthConnect button (medium green fill, dark green border)
+                    # NorthConnect button 
                     button_height = 60
                     button_width = menu_width - 20
                     button_x = margin_left + 10
@@ -1565,7 +1405,7 @@ class StreamServer:
                                   (button_x + button_width, button_y + button_height),
                                   DARK_GREEN, thickness=2)
 
-                    # NorthConnect text (white on dark green)
+                    # NorthConnect text 
                     text = "NorthConnect"
                     font_scale = 1.0
                     thickness = 2
@@ -1576,12 +1416,11 @@ class StreamServer:
                     text_y = button_y + (button_height + text_height) // 2
                     cv2.putText(frame, text, (text_x, text_y),
                                 cv2.FONT_HERSHEY_SIMPLEX, font_scale,
-                                BLACK, thickness + 2, cv2.LINE_AA)  # Black outline
+                                BLACK, thickness + 2, cv2.LINE_AA)
                     cv2.putText(frame, text, (text_x, text_y),
                                 cv2.FONT_HERSHEY_SIMPLEX, font_scale,
                                 WHITE, thickness, cv2.LINE_AA)
 
-                    # Input fields (green when active, gray otherwise)
                     input_height = 40
                     input_y_start = button_y + button_height + 20
 
@@ -1624,13 +1463,11 @@ class StreamServer:
                                 (field2_rect[0] + 10, field2_rect[1] + field2_rect[3] // 2 + 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
 
-                    # Draw toggle button (centered below the input fields)
                     toggle_btn_x = margin_left + (menu_width - 120) // 2
                     toggle_btn_y = field2_rect[1] + field2_rect[3] + 20
                     toggle_btn_w = 120
                     toggle_btn_h = 50
 
-                    # Draw filled rectangle (background) - always MEDIUM_GREEN like NorthConnect
                     cv2.rectangle(frame, (toggle_btn_x, toggle_btn_y),
                                 (toggle_btn_x + toggle_btn_w, toggle_btn_y + toggle_btn_h),
                                 MEDIUM_GREEN, thickness=-1)
@@ -1640,31 +1477,25 @@ class StreamServer:
                                 (toggle_btn_x + toggle_btn_w, toggle_btn_y + toggle_btn_h),
                                 DARK_GREEN, thickness=2)
 
-                    # Draw the text (white with black outline, centered)
                     toggle_text = "XY" if not xy_mode else "Angle"
                     (text_w, text_h), _ = cv2.getTextSize(toggle_text, cv2.FONT_HERSHEY_SIMPLEX, 1.2, 3)
                     text_x = toggle_btn_x + (toggle_btn_w - text_w) // 2
                     text_y = toggle_btn_y + (toggle_btn_h + text_h) // 2
                     cv2.putText(frame, toggle_text, (text_x, text_y),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1.2, BLACK, 4, cv2.LINE_AA)   # Black outline
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.2, BLACK, 4, cv2.LINE_AA)   
                     cv2.putText(frame, toggle_text, (text_x, text_y),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1.2, WHITE, 2, cv2.LINE_AA)   # White text
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.2, WHITE, 2, cv2.LINE_AA)  
 
-                    # Draw menu‐numpad (if Field 1 or Field 2 is active)
                     if overlay_data.get("field1Flag", 0) == 1 or overlay_data.get("field2Flag", 0) == 1:
-                        # Semi‐transparent dark overlay (unchanged)
                         overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
                         overlay_alpha[:] = BLACK
                         alpha = 0.6
-                        #cv2.addWeighted(overlay_alpha, alpha, frame, 1 - alpha, 0, frame)
 
-                        # Numpad container (now GREEN theme instead of dark gray)
                         numpad_width  = 300
                         numpad_height = 360
                         numpad_x      = (w - numpad_width) // 2
                         numpad_y      = (h - numpad_height) // 2 + 40
 
-                        # Background & border for numpad
                         cv2.rectangle(frame,
                                       (numpad_x, numpad_y),
                                       (numpad_x + numpad_width, numpad_y + numpad_height),
@@ -1674,7 +1505,6 @@ class StreamServer:
                                       (numpad_x + numpad_width, numpad_y + numpad_height),
                                       MEDIUM_GREEN, thickness=2)
 
-                        # Draw active field’s current value at top (WHITE text on dark green)
                         if xy_mode:
                             active_value = (
                                 overlay_data.get("nc_x_value", "0")
@@ -1691,7 +1521,6 @@ class StreamServer:
                                     (numpad_x + 10, numpad_y + 40),
                                     cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
 
-                        # Numpad buttons (4×4 grid, including “.”)
                         buttons = [
                             ("1", numpad_x + 10,  numpad_y + 70),
                             ("2", numpad_x + 80,  numpad_y + 70),
@@ -1719,7 +1548,6 @@ class StreamServer:
                         for txt, bx, by in buttons:
                             if txt == "":
                                 continue
-                            # Button background = DARK_GREEN, border = MEDIUM_GREEN
                             cv2.rectangle(frame,
                                           (bx, by),
                                           (bx + btn_width, by + btn_height),
@@ -1729,7 +1557,6 @@ class StreamServer:
                                           (bx + btn_width, by + btn_height),
                                           MEDIUM_GREEN, thickness=2)
 
-                            # Text centered in button (WHITE)
                             (tw, th), _ = cv2.getTextSize(txt,
                                                          cv2.FONT_HERSHEY_SIMPLEX,
                                                          0.8, 2)
@@ -1740,16 +1567,14 @@ class StreamServer:
                                         0.8, WHITE, 2, cv2.LINE_AA)
 
                 # ===========================
-                # NETWORK CONFIG (Green Theme) – Revert Numpad to “Menu” Style, Panel Above Numpad
+                # NETWORK CONFIG 
                 # ===========================
                 if overlay_data.get("network_flag", 0) == 1:
-                    # 1) Draw panel near top so it sits entirely above the centered numpad
                     net_w = 500
                     net_h = 300
                     margin_top = 50
                     margin_left = (w - net_w) // 2
 
-                    # Panel background (white) and border (medium green)
                     cv2.rectangle(frame,
                                   (margin_left, margin_top),
                                   (margin_left + net_w, margin_top + net_h),
@@ -1759,10 +1584,8 @@ class StreamServer:
                                   (margin_left + net_w, margin_top + net_h),
                                   MEDIUM_GREEN, thickness=3)
 
-                    # 2) Position labels and input boxes
-                    x0 = margin_left + 40    # label start
+                    x0 = margin_left + 40   
                     box_h = 40
-                    # Space fields evenly so they fit comfortably in 300px height
                     y_start = margin_top + 30
 
                     labels = ["IP Address:", "Subnet Mask:", "Gateway:", "DNS 1:", "DNS 2:"]
@@ -1770,20 +1593,17 @@ class StreamServer:
                     field_boxes = {}
 
                     for i, (lbl, key) in enumerate(zip(labels, keys)):
-                        y0 = y_start + i * (box_h + 10)  # row‐height = 50px
+                        y0 = y_start + i * (box_h + 10) 
 
-                        # Draw label (black)
                         cv2.putText(frame, lbl,
                                     (x0, y0 + box_h // 2 + 5),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2, cv2.LINE_AA)
 
-                        # Compute box coords (wider fields so IP fits)
                         bx0 = x0 + 160
                         by0 = y0
-                        bx1 = margin_left + net_w - 20   # 20px right padding
+                        bx1 = margin_left + net_w - 20   
                         by1 = by0 + box_h
 
-                        # Draw input‐box (green if active, gray otherwise)
                         is_act = (overlay_data.get("active_network_field") == key)
                         col   = MEDIUM_GREEN if is_act else (200, 200, 200)
                         field_boxes[key] = (bx0, by0, bx1, by1)
@@ -1791,18 +1611,15 @@ class StreamServer:
                         cv2.rectangle(frame, (bx0, by0), (bx1, by1), col, thickness=-1)
                         cv2.rectangle(frame, (bx0, by0), (bx1, by1), BLACK, thickness=2)
 
-                        # Draw current value (red)
                         cur_txt = overlay_data.get(key, "")
                         cv2.putText(frame, cur_txt,
                                     (bx0 + 10, by0 + box_h // 2 + 5),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, DARK_TURQUOISE, 2, cv2.LINE_AA)
 
-                    # 3) Add “Set” button inside panel, below last field
                     btn_w = 100
                     btn_h = 40
-                    # Position “Set” 20px below the last field (DNS2 ends at y = y_start + 4*50 + 40 = margin_top+30+200+40=margin_top+270)
-                    btn_x = margin_left + net_w - btn_w - 20     # 20px right padding
-                    btn_y = margin_top + 270 + 20                # 20px below DNS2
+                    btn_x = margin_left + net_w - btn_w - 20   
+                    btn_y = margin_top + 270 + 20                
                     cv2.rectangle(frame,
                                   (btn_x, btn_y),
                                   (btn_x + btn_w, btn_y + btn_h),
@@ -1820,21 +1637,16 @@ class StreamServer:
                     cv2.putText(frame, text, (text_x, text_y),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
 
-                    # 4) Draw network‐numpad exactly as menu‐numpad (centered), so it no longer overlaps the panel
                     if overlay_data.get("numpad_flag", 0) == 1 and overlay_data.get("active_network_field"):
-                        # Semi‐transparent overlay
                         overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
                         overlay_alpha[:] = BLACK
                         alpha = 0.6
-                        #cv2.addWeighted(overlay_alpha, alpha, frame, 1 - alpha, 0, frame)
 
-                        # Centered numpad (same as menu)
                         numpad_w = 300
                         numpad_h = 360
                         numpad_x = (w - numpad_w) // 2
                         numpad_y = (h - numpad_h) // 2 + 40
 
-                        # Background & border (green theme)
                         cv2.rectangle(frame,
                                       (numpad_x, numpad_y),
                                       (numpad_x + numpad_w, numpad_y + numpad_h),
@@ -1844,7 +1656,6 @@ class StreamServer:
                                       (numpad_x + numpad_w, numpad_y + numpad_h),
                                       MEDIUM_GREEN, thickness=2)
 
-                        # Display active field’s current value at top (WHITE text on dark green)
                         active_value = (
                             overlay_data.get("field1_value", "0")
                             if overlay_data.get("field1Flag", 0) == 1
@@ -1854,7 +1665,6 @@ class StreamServer:
                                     (numpad_x + 10, numpad_y + 40),
                                     cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
 
-                        # Numpad buttons (4×4 grid, including “.”)
                         buttons = [
                             ("1", numpad_x + 10,  numpad_y + 70),
                             ("2", numpad_x + 80,  numpad_y + 70),
@@ -1891,7 +1701,6 @@ class StreamServer:
                                           (bx + btn_width, by + btn_height),
                                           MEDIUM_GREEN, thickness=2)
 
-                            # Text centered in button (WHITE)
                             (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
                             text_x = bx + (btn_width - tw) // 2
                             text_y = by + (btn_height + th) // 2
@@ -1900,16 +1709,14 @@ class StreamServer:
                                         0.8, WHITE, 2, cv2.LINE_AA)
 
                 # ===========================
-                # NETWORK CONFIG (Green Theme) – Revert Numpad to “Menu” Style, Panel Above Numpad
+                # NETWORK CONFIG 
                 # ===========================
                 if overlay_data.get("network_flag", 0) == 1:
-                    # 1) Draw panel near top so it sits entirely above the centered numpad
                     net_w = 500
                     net_h = 300
                     margin_top = 50
                     margin_left = (w - net_w) // 2
 
-                    # Panel background (white) and border (medium green)
                     cv2.rectangle(frame,
                                   (margin_left, margin_top),
                                   (margin_left + net_w, margin_top + net_h),
@@ -1919,10 +1726,7 @@ class StreamServer:
                                   (margin_left + net_w, margin_top + net_h),
                                   MEDIUM_GREEN, thickness=3)
 
-                    # 2) Position labels and input boxes
-                    x0 = margin_left + 40    # label start
-                    box_h = 40
-                    # Space fields evenly so they fit comfortably in 300px height
+                    x0 = margin_left + 40    
                     y_start = margin_top + 30
 
                     labels = ["IP Address:", "Subnet Mask:", "Gateway:", "DNS 1:", "DNS 2:"]
@@ -1930,41 +1734,34 @@ class StreamServer:
                     field_boxes = {}
 
                     for i, (lbl, key) in enumerate(zip(labels, keys)):
-                        y0 = y_start + i * (box_h + 10)  # row‐height = 50px
+                        y0 = y_start + i * (box_h + 10)  
 
                         # Draw label (black)
                         cv2.putText(frame, lbl,
                                     (x0, y0 + box_h // 2 + 5),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2, cv2.LINE_AA)
 
-                        # Compute box coords (wider fields so IP fits)
                         bx0 = x0 + 160
                         by0 = y0
-                        bx1 = margin_left + net_w - 20   # 20px right padding
+                        bx1 = margin_left + net_w - 20  
                         by1 = by0 + box_h
 
-                        # Draw input‐box (green if active, gray otherwise)
                         is_act = (overlay_data.get("active_network_field") == key)
                         col   = MEDIUM_GREEN if is_act else (200, 200, 200)
                         field_boxes[key] = (bx0, by0, bx1, by1)
 
-                       
-
                         cv2.rectangle(frame, (bx0, by0), (bx1, by1), col, thickness=-1)
                         cv2.rectangle(frame, (bx0, by0), (bx1, by1), BLACK, thickness=2)
 
-                        # Draw current value (red)
                         cur_txt = overlay_data.get(key, "")
                         cv2.putText(frame, cur_txt,
                                     (bx0 + 10, by0 + box_h // 2 + 5),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, DARK_TURQUOISE, 2, cv2.LINE_AA)
 
-                    # 3) Add “Set” button inside panel, below last field
                     btn_w = 100
                     btn_h = 40
-                    # Position “Set” 20px below the last field (DNS2 ends at y = y_start + 4*50 + 40 = margin_top+30+200+40=margin_top+270)
-                    btn_x = margin_left + net_w - btn_w - 20     # 20px right padding
-                    btn_y = margin_top + 270 + 20                # 20px below DNS2
+                    btn_x = margin_left + net_w - btn_w - 20    
+                    btn_y = margin_top + 270 + 20                
                     cv2.rectangle(frame,
                                   (btn_x, btn_y),
                                   (btn_x + btn_w, btn_y + btn_h),
@@ -1982,21 +1779,16 @@ class StreamServer:
                     cv2.putText(frame, text, (text_x, text_y),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
 
-                    # 4) Draw network‐numpad exactly as menu‐numpad (centered), so it no longer overlaps the panel
                     if overlay_data.get("numpad_flag", 0) == 1 and overlay_data.get("active_network_field"):
-                        # Semi‐transparent overlay
                         overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
                         overlay_alpha[:] = BLACK
                         alpha = 0.6
-                        #cv2.addWeighted(overlay_alpha, alpha, frame, 1 - alpha, 0, frame)
 
-                        # Centered numpad (same as menu)
                         numpad_w = 300
                         numpad_h = 360
                         numpad_x = (w - numpad_w) // 2
                         numpad_y = (h - numpad_h) // 2 + 40
 
-                        # Background & border (green theme)
                         cv2.rectangle(frame,
                                       (numpad_x, numpad_y),
                                       (numpad_x + numpad_w, numpad_y + numpad_h),
@@ -2006,7 +1798,6 @@ class StreamServer:
                                       (numpad_x + numpad_w, numpad_y + numpad_h),
                                       MEDIUM_GREEN, thickness=2)
 
-                        # Display active field’s current value at top (WHITE text on dark green)
                         active_value = (
                             overlay_data.get("field1_value", "0")
                             if overlay_data.get("field1Flag", 0) == 1
@@ -2016,7 +1807,6 @@ class StreamServer:
                                     (numpad_x + 10, numpad_y + 40),
                                     cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
 
-                        # Numpad buttons (4×4 grid, including “.”)
                         buttons = [
                             ("1", numpad_x + 10,  numpad_y + 70),
                             ("2", numpad_x + 80,  numpad_y + 70),
@@ -2053,7 +1843,6 @@ class StreamServer:
                                           (bx + btn_width, by + btn_height),
                                           MEDIUM_GREEN, thickness=2)
 
-                            # Text centered in button (WHITE)
                             (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
                             text_x = bx + (btn_width - tw) // 2
                             text_y = by + (btn_height + th) // 2
@@ -2062,16 +1851,14 @@ class StreamServer:
                                         0.8, WHITE, 2, cv2.LINE_AA)
 
                 # ===========================
-                # NETWORK CONFIG (Green Theme) – Revert Numpad to “Menu” Style, Panel Above Numpad
+                # NETWORK CONFIG
                 # ===========================
                 if overlay_data.get("network_flag", 0) == 1:
-                    # 1) Draw panel near top so it sits entirely above the centered numpad
                     net_w = 500
                     net_h = 300
                     margin_top = 50
                     margin_left = (w - net_w) // 2
 
-                    # Panel background (white) and border (medium green)
                     cv2.rectangle(frame,
                                   (margin_left, margin_top),
                                   (margin_left + net_w, margin_top + net_h),
@@ -2081,10 +1868,8 @@ class StreamServer:
                                   (margin_left + net_w, margin_top + net_h),
                                   MEDIUM_GREEN, thickness=3)
 
-                    # 2) Position labels and input boxes
-                    x0 = margin_left + 40    # label start
+                    x0 = margin_left + 40
                     box_h = 40
-                    # Space fields evenly so they fit comfortably in 300px height
                     y_start = margin_top + 30
 
                     labels = ["IP Address:", "Subnet Mask:", "Gateway:", "DNS 1:", "DNS 2:"]
@@ -2094,18 +1879,15 @@ class StreamServer:
                     for i, (lbl, key) in enumerate(zip(labels, keys)):
                         y0 = y_start + i * (box_h + 10)  # row‐height = 50px
 
-                        # Draw label (black)
                         cv2.putText(frame, lbl,
                                     (x0, y0 + box_h // 2 + 5),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2, cv2.LINE_AA)
 
-                        # Compute box coords (wider fields so IP fits)
                         bx0 = x0 + 160
                         by0 = y0
-                        bx1 = margin_left + net_w - 20   # 20px right padding
+                        bx1 = margin_left + net_w - 20   
                         by1 = by0 + box_h
 
-                        # Draw input‐box (green if active, gray otherwise)
                         is_act = (overlay_data.get("active_network_field") == key)
                         col   = MEDIUM_GREEN if is_act else (200, 200, 200)
                         field_boxes[key] = (bx0, by0, bx1, by1)
@@ -2113,18 +1895,15 @@ class StreamServer:
                         cv2.rectangle(frame, (bx0, by0), (bx1, by1), col, thickness=-1)
                         cv2.rectangle(frame, (bx0, by0), (bx1, by1), BLACK, thickness=2)
 
-                        # Draw current value (red)
                         cur_txt = overlay_data.get(key, "")
                         cv2.putText(frame, cur_txt,
                                     (bx0 + 10, by0 + box_h // 2 + 5),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, DARK_TURQUOISE, 2, cv2.LINE_AA)
 
-                    # 3) Add “Set” button inside panel, below last field
                     btn_w = 100
                     btn_h = 40
-                    # Position “Set” 20px below the last field (DNS2 ends at y = y_start + 4*50 + 40 = margin_top+30+200+40=margin_top+270)
-                    btn_x = margin_left + net_w - btn_w - 20     # 20px right padding
-                    btn_y = margin_top + 270 + 20                # 20px below DNS2
+                    btn_x = margin_left + net_w - btn_w - 20    
+                    btn_y = margin_top + 270 + 20              
                     cv2.rectangle(frame,
                                   (btn_x, btn_y),
                                   (btn_x + btn_w, btn_y + btn_h),
@@ -2142,21 +1921,16 @@ class StreamServer:
                     cv2.putText(frame, text, (text_x, text_y),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
 
-                    # 4) Draw network‐numpad exactly as menu‐numpad (centered), so it no longer overlaps the panel
                     if overlay_data.get("numpad_flag", 0) == 1 and overlay_data.get("active_network_field"):
-                        # Semi‐transparent overlay
                         overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
                         overlay_alpha[:] = BLACK
                         alpha = 0.6
-                        #cv2.addWeighted(overlay_alpha, alpha, frame, 1 - alpha, 0, frame)
 
-                        # Centered numpad (same as menu)
                         numpad_w = 300
                         numpad_h = 360
                         numpad_x = (w - numpad_w) // 2
                         numpad_y = (h - numpad_h) // 2 + 40
 
-                        # Background & border (green theme)
                         cv2.rectangle(frame,
                                       (numpad_x, numpad_y),
                                       (numpad_x + numpad_w, numpad_y + numpad_h),
@@ -2166,7 +1940,6 @@ class StreamServer:
                                       (numpad_x + numpad_w, numpad_y + numpad_h),
                                       MEDIUM_GREEN, thickness=2)
 
-                        # Display active field’s current value at top (WHITE text on dark green)
                         active_value = (
                             overlay_data.get("field1_value", "0")
                             if overlay_data.get("field1Flag", 0) == 1
@@ -2176,7 +1949,6 @@ class StreamServer:
                                     (numpad_x + 10, numpad_y + 40),
                                     cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
 
-                        # Numpad buttons (4×4 grid, including “.”)
                         buttons = [
                             ("1", numpad_x + 10,  numpad_y + 70),
                             ("2", numpad_x + 80,  numpad_y + 70),
@@ -2222,7 +1994,6 @@ class StreamServer:
                                         cv2.FONT_HERSHEY_SIMPLEX,
                                         0.8, WHITE, 2, cv2.LINE_AA)
                             
-                #6 TAKE SCREENSHOT OF CURRENT FRAME AFTER OVERLAYS
                 if overlay_data.get("screenshot_flag", 0) == 1:
                     try:
                         timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -2237,14 +2008,12 @@ class StreamServer:
                         with open(screenshot_path, "w") as f:
                             json.dump({"screenshot_flag": 0}, f)
 
-                # ===========================
                 if overlay_data.get("move_to_target_flag", 0) == 1:
                     menu_width = 400
                     menu_height = 400
                     margin_top = 10
                     margin_left = 10
 
-                    # Background (dark green fill, medium green border)
                     cv2.rectangle(frame,
                                 (margin_left, margin_top),
                                 (margin_left + menu_width, margin_top + menu_height),
@@ -2254,23 +2023,6 @@ class StreamServer:
                                 (margin_left + menu_width, margin_top + menu_height),
                                 MEDIUM_GREEN, thickness=2)
 
-                    # # Title
-                    # title_text = "Move to Target"
-                    # font_scale = 1.2
-                    # thickness = 2
-                    # (text_width, text_height), _ = cv2.getTextSize(title_text,
-                    #                                             cv2.FONT_HERSHEY_SIMPLEX,
-                    #                                             font_scale, thickness)
-                    # title_x = margin_left + (menu_width - text_width) // 2
-                    # title_y = margin_top + 40
-                    # cv2.putText(frame, title_text, (title_x, title_y),
-                    #             cv2.FONT_HERSHEY_SIMPLEX, font_scale,
-                    #             BLACK, thickness + 2, cv2.LINE_AA)  # Black outline
-                    # cv2.putText(frame, title_text, (title_x, title_y),
-                    #             cv2.FONT_HERSHEY_SIMPLEX, font_scale,
-                    #             WHITE, thickness, cv2.LINE_AA)
-
-                    # Input fields
                     title_y = margin_top + 40
                     input_height = 40
                     input_y_start = title_y + 30
@@ -2291,7 +2043,6 @@ class StreamServer:
                     cv2.putText(frame, "X:",
                                 (x_field_rect[0] - 30, x_field_rect[1] + x_field_rect[3] // 2 + 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2)
-                    # Display current value
                     cv2.putText(frame, overlay_data.get("move_target_x", "0"),
                                 (x_field_rect[0] + 10, x_field_rect[1] + x_field_rect[3] // 2 + 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
@@ -2311,7 +2062,6 @@ class StreamServer:
                     cv2.putText(frame, "Y:",
                                 (y_field_rect[0] - 30, y_field_rect[1] + y_field_rect[3] // 2 + 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2)
-                    # Display current value
                     cv2.putText(frame, overlay_data.get("move_target_y", "0"),
                                 (y_field_rect[0] + 10, y_field_rect[1] + y_field_rect[3] // 2 + 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
@@ -2362,25 +2112,21 @@ class StreamServer:
                     text_y = move_button_y + (move_button_height + text_height) // 2
                     cv2.putText(frame, move_text, (text_x, text_y),
                                 cv2.FONT_HERSHEY_SIMPLEX, font_scale,
-                                BLACK, thickness + 2, cv2.LINE_AA)  # Black outline
+                                BLACK, thickness + 2, cv2.LINE_AA)  
                     cv2.putText(frame, move_text, (text_x, text_y),
                                 cv2.FONT_HERSHEY_SIMPLEX, font_scale,
                                 WHITE, thickness, cv2.LINE_AA)
 
-                    # Draw move-numpad (if any field is active)
                     if overlay_data.get("active_move_field") is not None:
-                        # Semi-transparent dark overlay
                         overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
                         overlay_alpha[:] = BLACK
                         alpha = 0.6
 
-                        # Numpad container (GREEN theme)
                         numpad_width  = 300
                         numpad_height = 360
                         numpad_x      = (w - numpad_width) // 2
                         numpad_y      = (h - numpad_height) // 2 + 40
 
-                        # Background & border for numpad
                         cv2.rectangle(frame,
                                     (numpad_x, numpad_y),
                                     (numpad_x + numpad_width, numpad_y + numpad_height),
@@ -2390,7 +2136,6 @@ class StreamServer:
                                     (numpad_x + numpad_width, numpad_y + numpad_height),
                                     MEDIUM_GREEN, thickness=2)
 
-                        # Draw active field's current value at top
                         active_field = overlay_data.get("active_move_field")
                         active_value = overlay_data.get(f"move_target_{active_field}", "0")
                         field_label = active_field.upper() if active_field else ""
@@ -2399,7 +2144,6 @@ class StreamServer:
                                     (numpad_x + 10, numpad_y + 40),
                                     cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
 
-                        # Numpad buttons (4×4 grid)
                         buttons = [
                             ("1", numpad_x + 10,  numpad_y + 70),
                             ("2", numpad_x + 80,  numpad_y + 70),
@@ -2427,7 +2171,6 @@ class StreamServer:
                         for txt, bx, by in buttons:
                             if txt == "":
                                 continue
-                            # Button background = DARK_GREEN, border = MEDIUM_GREEN
                             cv2.rectangle(frame,
                                         (bx, by),
                                         (bx + btn_width, by + btn_height),
@@ -2437,7 +2180,6 @@ class StreamServer:
                                         (bx + btn_width, by + btn_height),
                                         MEDIUM_GREEN, thickness=2)
 
-                            # Text centered in button (WHITE)
                             (tw, th), _ = cv2.getTextSize(txt,
                                                         cv2.FONT_HERSHEY_SIMPLEX,
                                                         0.8, 2)
@@ -2450,12 +2192,10 @@ class StreamServer:
                 if (frame.shape[1], frame.shape[0]) != (out_w, out_h):
                     frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
 
-                # Convert frame to GStreamer buffer as before...
                 data = frame.tobytes()
                 buf = Gst.Buffer.new_allocate(None, len(data), None)
                 buf.fill(0, data)
 
-                # Push it downstream
                 _appsrc.emit("push-buffer", buf)
 
                 frame_count += 1
@@ -2488,7 +2228,6 @@ class StreamServer:
     def readConfig(self):
         try:
             with open(self.file, 'r') as file:
-                # Filter out special characters that break the json parser
                 filter = ''.join(e for e in file.read() \
                     if e.isalnum() \
                     or e.isdigit() \
@@ -2564,7 +2303,6 @@ class StreamServer:
                 
                 self.video_stabilisation = config["CameraControls"]["image_stabilization"]
                 
-                # These settings will be ignored:
                 self.bitrate_mode = config["CodecControls"]["video_bitrate_mode"]
                 self.repeat_sequence_header = config["CodecControls"]["repeat_sequence_header"]
                 self.h264_level = config["CodecControls"]["h264_level"]

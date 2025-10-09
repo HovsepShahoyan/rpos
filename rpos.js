@@ -28,7 +28,6 @@ remaining -= 2;
 const users = {
   admin: { password: 'admin', role: 'admin' },
   user1: { password: 'user1', role: 'user' }
-  // add more users as needed
 };
 
 
