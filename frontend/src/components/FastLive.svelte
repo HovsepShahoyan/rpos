@@ -491,6 +491,22 @@
 		<div>mestoC: <span>{$angles.elevation_degrees || '--'}</span></div>
 		<div>Distance: <span>{$distance.D || '--'}</span></div>
 	</div>
+	<div class="stream-selector">
+		<button
+			class="stream-btn"
+			class:active={$currentStream === 1}
+			on:click={() => switchStream(1)}
+		>
+			Stream 1
+		</button>
+		<button
+			class="stream-btn"
+			class:active={$currentStream === 2}
+			on:click={() => switchStream(2)}
+		>
+			Stream 2
+		</button>
+	</div>
 	<button class="standard-button" on:click={measureRange}>
 		Measure Range
 	</button>
@@ -519,22 +535,6 @@
 				<div class="stream-status">
 					<span class="status-indicator status-online"></span>
 					<span>Live Stream Active</span>
-				</div>
-				<div class="stream-selector">
-					<button
-						class="stream-btn"
-						class:active={$currentStream === 1}
-						on:click={() => switchStream(1)}
-					>
-						Stream 1
-					</button>
-					<button
-						class="stream-btn"
-						class:active={$currentStream === 2}
-						on:click={() => switchStream(2)}
-					>
-						Stream 2
-					</button>
 				</div>
 			</div>
 		</div>
@@ -639,6 +639,7 @@
 		justify-content: space-between;
 		margin-bottom: 1.5rem;
 		gap: 2rem;
+		flex-wrap: wrap;
 	}
 
 	.angles-top {
@@ -658,6 +659,39 @@
 	.angles-top span {
 		color: #00d4aa;
 		font-weight: 700;
+	}
+
+	.page-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 1.5rem;
+		gap: 2rem;
+		flex-wrap: wrap;
+	}
+
+	.stream-selector {
+		display: flex;
+		gap: 0.75rem;
+	}
+
+	.stream-btn {
+		background: rgba(0, 0, 0, 0.7);
+		color: white;
+		border: 1px solid #00d4aa;
+		border-radius: 0.5rem;
+		padding: 0.75rem 1.5rem;
+		font-size: 1rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		min-width: 120px;
+	}
+
+	.stream-btn.active {
+		background: #00d4aa;
+		color: #0f111a;
+		font-weight: 600;
 	}
 
 	.standard-button {
