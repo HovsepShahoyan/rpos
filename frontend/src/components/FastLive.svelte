@@ -1081,6 +1081,118 @@ ye<script>
 		color: #0f111a;
 	}
 
+	/* Thermal Mode Buttons */
+	.mode-selector {
+		display: flex;
+		gap: 0.5rem;
+		justify-content: center;
+	}
+
+	.mode-btn {
+		flex: 1;
+		padding: 0.75rem 1rem;
+		font-size: 0.95rem;
+		font-weight: 500;
+		background: #1a2036;
+		border: 1px solid #3a4258;
+		border-radius: 0.5rem;
+		color: #f0f4ff;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		text-align: center;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.mode-btn:hover {
+		background: #2a3441;
+		border-color: #00d4aa;
+		transform: translateY(-1px);
+	}
+
+	.mode-btn.active {
+		background: #00d4aa;
+		color: #0f111a;
+		border-color: #00d4aa;
+		font-weight: 600;
+		box-shadow: 0 0 10px rgba(0, 212, 170, 0.3);
+	}
+
+	/* Image Adjustments */
+	.image-controls {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.adjustment-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.adjustment-row span {
+		font-size: 0.9rem;
+		color: #b8c2e0;
+		font-weight: 500;
+		min-width: 80px;
+	}
+
+	.adjustment-row span[id] {
+		font-size: 1rem;
+		color: #00d4aa;
+		font-weight: 700;
+		text-align: center;
+		min-width: 40px;
+	}
+
+	/* Zoom Controls */
+	.zoom-controls {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+	}
+
+	.zoom-value {
+		font-size: 1rem;
+		color: #00d4aa;
+		font-weight: 700;
+		min-width: 40px;
+		text-align: center;
+	}
+
+	/* Shared Button Styles for Zoom and Adjustments */
+	.zoom-btn {
+		width: 40px;
+		height: 40px;
+		background: #1a2036;
+		border: 1px solid #3a4258;
+		border-radius: 0.5rem;
+		color: #f0f4ff;
+		font-size: 1.2rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.zoom-btn:hover {
+		background: #2a3441;
+		border-color: #00d4aa;
+		transform: translateY(-1px);
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+	}
+
+	.zoom-btn:active {
+		background: #00d4aa;
+		color: #0f111a;
+		transform: translateY(0);
+	}
+
 	@keyframes clickFeedback {
 		0% { opacity: 1; transform: scale(1); }
 		50% { opacity: 0.8; transform: scale(1.5); }
