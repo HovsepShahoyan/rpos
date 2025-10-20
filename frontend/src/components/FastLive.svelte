@@ -1,10 +1,21 @@
-<script>
+ye<script>
 	import { onMount } from 'svelte';
 	import { currentStream, currentSpeed } from '../stores/camera.js';
 	import { angles, distance } from '../stores/telemetry.js';
 	import { showToast } from '../stores/ui.js';
 	import { setSpeed, setCurrentStream, sendControlValue } from '../utils/api.js';
-	import { GO2RTC_BASE } from '../utils/constants.js';
+	import {
+		GO2RTC_BASE,
+		BASE_FOV_HORIZONTAL,
+		BASE_FOV_VERTICAL,
+		AZIM_RIGHT,
+		AZIM_LEFT,
+		ELEV_UP,
+		ELEV_DOWN,
+		DAY_ZOOM_COEFFICIENT_GRID,
+		IR_ZOOM_COEFFICIENT_GRID,
+		IR_CROSSHAIR_POSITIONS
+	} from '../utils/constants.js';
 
 	let iframeUrl = '';
 	let selectedSpeed = 4;
@@ -16,37 +27,7 @@
 	let streamPositions = { 1: { x: 0.5, y: 0.5 }, 2: { x: 0.5, y: 0.5 } };
 	let crosshairElements = {};
 	let pollingActive = true;
-
-	// Constants from camera.js
-	const BASE_FOV_HORIZONTAL = 66.0;
-	const BASE_FOV_VERTICAL = 40.3;
-	const AZIM_RIGHT = 271000;
-	const AZIM_LEFT = 0;
-	const ELEV_UP = 262143;
-	const ELEV_DOWN = 0;
-
-	const DAY_ZOOM_COEFFICIENT_GRID = {
-		6: [1.1, 1.05],
-		5: [1.45, 1.35],
-		4: [1.8, 1.7],
-		3: [1.8, 1.65],
-		2: [1.62, 1.45],
-		1: [1.03, 0.9]
-	};
-
-	const IR_ZOOM_COEFFICIENT_GRID = {
-		8: [0.65, 0.58],
-		4: [0.95, 0.85],
-		2: [1.25, 1.1],
-		1: [1.28, 1.1]
-	};
-
-	const IR_CROSSHAIR_POSITIONS = {
-		1: [959, 557],
-		2: [960, 563],
-		4: [960, 564],
-		8: [960, 557]
-	};
+	let currentActiveStream = 1;
 
 	$: {
 		// Update iframe URL when stream changes
@@ -55,16 +36,34 @@
 		iframeUrl = `${GO2RTC_BASE}/webrtc.html?src=${encodeURIComponent(srcName)}`;
 	}
 
+	// Switch stream: keep mapping consistent with original JS
+	// stream 1 => IR (cameraType=2) width 1350, stream 2 => Day (cameraType=1) width 1920
 	function switchStream(streamNumber) {
+		currentActiveStream = streamNumber;
+
+		if (streamNumber === 1) {
+			currentVideoWidth = 1350;
+			currentCameraType = 2; // IR
+		} else {
+			currentVideoWidth = 1920;
+			currentCameraType = 1; // Day
+		}
+
 		currentStream.set(streamNumber);
-		currentCameraType = streamNumber === 1 ? 1 : 2; // 1 for day, 2 for ir
-		setCurrentStream(streamNumber === 1 ? 2 : 1).catch(err => {
-			console.error('Failed to switch stream:', err);
-			showToast('Failed to switch stream', 'error');
+
+		// send actual camera type to backend
+		setCurrentStream(currentCameraType).catch(err => {
+			console.error('Failed to set current stream on backend:', err);
+			showToast('Failed to set current stream', 'error');
 		});
-		// Update crosshairs
+
+		// update overlay and coords
 		updateCrosshairVisibility();
 		fetchAndUpdateCoords(streamNumber);
+
+		// update iframe source quickly
+		const iframe = document.getElementById('webrtcFrame');
+		if (iframe) iframe.src = iframeUrl;
 	}
 
 	function handleSetSpeed(speed) {
@@ -85,6 +84,20 @@
 		}).catch(err => console.error('PTZ control error:', err));
 	}
 
+	function movePTZ(dir) {
+		// convenience wrapper for directional buttons
+		switch (dir) {
+			case 'up': handlePTZButton('ptz_up', 'true'); setTimeout(()=>handlePTZButton('ptz_up','false'), 150); break;
+			case 'down': handlePTZButton('ptz_down', 'true'); setTimeout(()=>handlePTZButton('ptz_down','false'), 150); break;
+			case 'left': handlePTZButton('ptz_left', 'true'); setTimeout(()=>handlePTZButton('ptz_left','false'), 150); break;
+			case 'right': handlePTZButton('ptz_right', 'true'); setTimeout(()=>handlePTZButton('ptz_right','false'), 150); break;
+			case 'up-left': movePTZ('up'); movePTZ('left'); break;
+			case 'up-right': movePTZ('up'); movePTZ('right'); break;
+			case 'down-left': movePTZ('down'); movePTZ('left'); break;
+			case 'down-right': movePTZ('down'); movePTZ('right'); break;
+		}
+	}
+
 	function measureRange() {
 		handlePTZButton('range_finder', 'true');
 		setTimeout(() => handlePTZButton('range_finder', 'false'), 100);
@@ -100,8 +113,19 @@
 		const clickX = event.clientX - rect.left;
 		const clickY = event.clientY - rect.top;
 
-		const percentX = (clickX / rect.width) * currentVideoWidth;
-		const percentY = (clickY / rect.height) * currentVideoHeight;
+	// Account for object-fit: contain scaling and centering
+		const scale = Math.min(rect.width / currentVideoWidth, rect.height / currentVideoHeight);
+		const displayedWidth = currentVideoWidth * scale;
+		const displayedHeight = currentVideoHeight * scale;
+		const offsetLeft = (rect.width - displayedWidth) / 2;
+		const offsetTop = (rect.height - displayedHeight) / 2;
+
+		const clickX_in_video = (clickX - offsetLeft) / scale;
+		const clickY_in_video = (clickY - offsetTop) / scale;
+
+		// Clamp to video bounds
+		const percentX = Math.max(0, Math.min(currentVideoWidth, clickX_in_video));
+		const percentY = Math.max(0, Math.min(currentVideoHeight, clickY_in_video));
 
 		showClickFeedback(clickX, clickY, rect);
 
@@ -109,26 +133,22 @@
 		let currentZoomValue = 1;
 		try {
 			const zoomResponse = await fetch('/api/currentZoom');
-			const zoomData = await zoomResponse.json();
-			currentZoomValue = zoomData.zoom;
+			if (zoomResponse.ok) {
+				const zoomData = await zoomResponse.json();
+				currentZoomValue = zoomData.zoom || currentZoomValue;
+			}
 		} catch (error) {
 			console.error('Error getting current zoom:', error);
 		}
 
-		// Get cross positions
-		let xCrossPos = 959;
-		let yCrossPos = 557;
-		try {
-			const crossResponse = await fetch(`/api/crossPositions?zoom=${currentZoomValue}`);
-			const crossData = await crossResponse.json();
-			xCrossPos = crossData.x;
-			yCrossPos = crossData.y;
-		} catch (error) {
-			console.error('Error getting cross positions:', error);
-		}
+		// Get current crosshair pixel positions
+		const currentPos = streamPositions[$currentStream];
+		let xCrossPos = currentPos.x * currentVideoWidth;
+		let yCrossPos = currentPos.y * currentVideoHeight;
 
 		try {
 			const positionResponse = await fetch('/api/ptzPosition');
+			if (!positionResponse.ok) throw new Error('ptzPosition not ok ' + positionResponse.status);
 			const positionData = await positionResponse.json();
 			const currentHorizontal = positionData.az;
 			const currentVertical = positionData.el;
@@ -181,7 +201,8 @@
 		let isIR = cameraType === 2;
 		let fovHorizontal, fovVertical, correctionCoefficientH, correctionCoefficientV;
 
-		let cross_x, cross_y;
+		let cross_x = 960;
+		let cross_y = 520;
 
 		if (isIR) {
 			let irZoomMap = {1:1, 2:2, 3:4, 4:8, 5:8, 6:8};
@@ -216,10 +237,10 @@
 		let angleOffsetV = (relY + yCrossCorrection / screenHeight) * fovVertical * correctionCoefficientV;
 
 		let newHorizontal = currentHorizontal + Math.floor(angleOffsetH * (AZIM_RIGHT / 360));
-		let newVertical = currentVertical + Math.floor(angleOffsetV * (AZIM_RIGHT / 360));
+		let newVertical = currentVertical + Math.floor(angleOffsetV * (ELEV_UP / 360)); // use ELEV_UP vertically
 
 		newHorizontal = Math.max(0, Math.min(AZIM_RIGHT, newHorizontal));
-		newVertical = Math.max(0, Math.min(AZIM_RIGHT, newVertical));
+		newVertical = Math.max(0, Math.min(ELEV_UP, newVertical));
 
 		return [newHorizontal, newVertical];
 	}
@@ -307,9 +328,8 @@
 		img.style.transform = 'translate(-50%, -50%)';
 
 		let desiredSrc = window.location.origin + '/tmp/active_cross' + streamNumber + '.png';
-		if (img.src !== desiredSrc) {
-			img.src = desiredSrc;
-		}
+		// always add cache buster
+		img.src = desiredSrc + '?_=' + Date.now();
 
 		applyNormalizedPositionToEl(img, streamPositions[streamNumber]);
 
@@ -332,7 +352,7 @@
 		const containerEl = document.querySelector('.video-wrapper');
 		if (!containerEl) return;
 		const rect = containerEl.getBoundingClientRect();
-		const scale = rect.width / currentVideoWidth;
+		const scale = rect.width / 1920;
 		const crosshairs = document.querySelectorAll('.crosshair-overlay');
 		crosshairs.forEach(function(img) {
 			let nw = img.dataset.naturalWidth;
@@ -354,8 +374,8 @@
 				norm.x = coords.x;
 				norm.y = coords.y;
 			} else {
-				norm.x = coords.x / currentVideoWidth;
-				norm.y = coords.y / currentVideoHeight;
+				norm.x = coords.x / 1920;
+				norm.y = coords.y / 1080;
 			}
 		} else {
 			console.warn('Coords missing numeric x/y for stream', streamNumber, coords);
@@ -392,14 +412,13 @@
 			'/overlay/overlay_coords' + streamNumber + '.json',
 			'/overlay_coords' + streamNumber + '.json'
 		];
-		let tried = 0;
 		function tryPath(idx) {
 			if (idx >= COORD_PATHS_TRY.length) {
 				console.warn('No coords available for stream', streamNumber);
 				return;
 			}
 			const path = COORD_PATHS_TRY[idx] + '?_=' + Date.now();
-			fetch(path)
+			fetch(path, { cache: 'no-store' })
 				.then(resp => {
 					if (!resp.ok) throw new Error('Status ' + resp.status);
 					return resp.json();
@@ -408,7 +427,6 @@
 					updateCrosshairPosition(streamNumber, data);
 				})
 				.catch(e => {
-					console.error('Coords fetch error for', path, e);
 					tryPath(idx + 1);
 				});
 		}
@@ -425,28 +443,93 @@
 				if (pollingActive) fetchAndUpdateCoords(stream);
 			}, 500);
 
-			const imgUrl = window.location.origin + '/tmp/active_cross' + stream + '.png';
+			const imgUrlBase = window.location.origin + '/tmp/active_cross' + stream + '.png';
 			imageIntervals[stream] = setInterval(() => {
 				if (pollingActive) {
-					fetch(imgUrl, { method: 'HEAD' })
-						.then(resp => {
-							const lastMod = resp.headers.get('last-modified');
-							const etag = resp.headers.get('etag');
-							// Simple check, reload if changed
-							const img = crosshairElements[stream];
-							if (img && img.src !== imgUrl + '?_=' + Date.now()) {
-								img.src = imgUrl + '?_=' + Date.now();
-							}
-						})
-						.catch(() => {});
+					const img = crosshairElements[stream];
+					if (img) {
+						img.src = imgUrlBase + '?_=' + Date.now();
+					}
 				}
-			}, 500);
+			}, 700);
 		});
 	}
 
 	function stopPolling() {
 		Object.values(coordIntervals).forEach(clearInterval);
 		Object.values(imageIntervals).forEach(clearInterval);
+		coordIntervals = {};
+		imageIntervals = {};
+	}
+
+	// Zoom / image / thermal wrappers (wire UI buttons)
+	function setDayZoom(dir) {
+		const dayZoomValues = [1, 5, 15, 30, 60, 68];
+		let currentDayZoomIndex = dayZoomValues.indexOf(parseInt(document.getElementById('dayZoomValue').textContent.replace('x', '')));
+		if (currentDayZoomIndex === -1) currentDayZoomIndex = 0;
+		if (dir === 'up') {
+			currentDayZoomIndex = Math.min(dayZoomValues.length - 1, currentDayZoomIndex + 1);
+		} else {
+			currentDayZoomIndex = Math.max(0, currentDayZoomIndex - 1);
+		}
+		const value = dayZoomValues[currentDayZoomIndex];
+		sendControlValue('UserControls', 'day_zoom', value);
+		const level = currentDayZoomIndex + 1;
+		fetch('/api/setZoomLevel', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ level })
+		}).catch(console.error);
+		document.getElementById('dayZoomValue').textContent = value + 'x';
+		showToast('Day Zoom set to ' + value + 'x', 'success');
+	}
+
+	function setDigitalZoom(dir) {
+		const digitalZoomValues = [1, 2, 4, 8];
+		let currentDigitalZoomIndex = digitalZoomValues.indexOf(parseInt(document.getElementById('nightZoomValue').textContent.replace('x', '')));
+		if (currentDigitalZoomIndex === -1) currentDigitalZoomIndex = 0;
+		if (dir === 'up') {
+			currentDigitalZoomIndex = Math.min(digitalZoomValues.length - 1, currentDigitalZoomIndex + 1);
+		} else {
+			currentDigitalZoomIndex = Math.max(0, currentDigitalZoomIndex - 1);
+		}
+		const value = digitalZoomValues[currentDigitalZoomIndex];
+		sendControlValue('UserControls', 'digital_zoom', value);
+		document.getElementById('nightZoomValue').textContent = value + 'x';
+		showToast('Night Zoom set to ' + value + 'x', 'success');
+	}
+
+	function setThermalMode(mode) {
+		sendControlValue('UserControls', 'palette', mode === 'blackhot' ? 1 : 0);
+		document.querySelectorAll('.mode-btn').forEach(function(btn) {
+			var btnMode = btn.textContent.toLowerCase().replace(' hot', 'hot');
+			btn.classList.toggle('active', btnMode === mode);
+		});
+		showToast('Thermal mode set to ' + mode, 'success');
+	}
+
+	function adjustBrightness(dir) {
+		let currentBrightness = parseInt(document.getElementById('brightnessValue').textContent);
+		if (dir === 'up') {
+			currentBrightness = Math.min(100, currentBrightness + 10);
+		} else {
+			currentBrightness = Math.max(0, currentBrightness - 10);
+		}
+		document.getElementById('brightnessValue').textContent = currentBrightness;
+		sendControlValue('UserControls', 'brightness', currentBrightness);
+		showToast('Brightness set to ' + currentBrightness, 'success');
+	}
+
+	function adjustContrast(dir) {
+		let currentContrast = parseInt(document.getElementById('contrastValue').textContent);
+		if (dir === 'up') {
+			currentContrast = Math.min(100, currentContrast + 10);
+		} else {
+			currentContrast = Math.max(0, currentContrast - 10);
+		}
+		document.getElementById('contrastValue').textContent = currentContrast;
+		sendControlValue('UserControls', 'contrast', currentContrast);
+		showToast('Contrast set to ' + currentContrast, 'success');
 	}
 
 	onMount(() => {
@@ -474,6 +557,8 @@
 		// Handle visibility
 		const visibilityHandler = () => {
 			pollingActive = !document.hidden;
+			if (!pollingActive) stopPolling();
+			else startPolling();
 		};
 		document.addEventListener('visibilitychange', visibilityHandler);
 
@@ -481,9 +566,11 @@
 			stopPolling();
 			window.removeEventListener('resize', resizeHandler);
 			document.removeEventListener('visibilitychange', visibilityHandler);
+			if (videoOverlay) videoOverlay.removeEventListener('click', handleVideoClick);
 		};
 	});
 </script>
+
 
 <div class="page-header">
 	<div class="angles-top">
@@ -542,6 +629,15 @@
 
 	<!-- Controls Panel -->
 	<div class="controls-panel">
+		<!-- Stream mode selector -->
+		<div class="control-section">
+			<div class="control-label">THERMAL MODE</div>
+			<div class="mode-selector">
+				<button class="mode-btn active" on:click={() => setThermalMode('blackhot')}>Black Hot</button>
+				<button class="mode-btn" on:click={() => setThermalMode('whitehot')}>White Hot</button>
+			</div>
+		</div>
+
 		<!-- PTZ Controls -->
 		<div class="control-section">
 			<div class="control-label">PTZ CONTROLS</div>
@@ -580,6 +676,18 @@
 			</div>
 		</div>
 
+		<!-- North Connect -->
+		<div class="control-section">
+			<div class="control-label">NORTH</div>
+			<div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+				D1: <input type="number" min="0" max="59" value="1" class="form-control" style="width: 80px;" on:change={(e) => sendControlValue('UserControls', 'alphaD1', e.target.value)} />
+			</div>
+			<div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+				D2: <input type="number" min="0" max="99" value="1" class="form-control" style="width: 80px;" on:change={(e) => sendControlValue('UserControls', 'alphaD2', e.target.value)} />
+			</div>
+			<button class="standard-button" on:mousedown={() => handlePTZButton('north_connect', 'true')} on:mouseup={() => handlePTZButton('north_connect', 'false')}>Connect</button>
+		</div>
+
 		<!-- Speed Controls -->
 		<div class="control-section">
 			<div class="control-label">SPEED</div>
@@ -609,7 +717,46 @@
 			</div>
 		</div>
 
-		<!-- Focus Controls -->
+		<!-- Image adjustments -->
+		<div class="control-section">
+			<div class="control-label">IMAGE ADJUSTMENTS</div>
+			<div class="image-controls">
+				<div class="adjustment-row">
+					<span>Brightness</span>
+					<button class="zoom-btn" on:click={() => adjustBrightness('down')}>-</button>
+					<span id="brightnessValue">50</span>
+					<button class="zoom-btn" on:click={() => adjustBrightness('up')}>+</button>
+				</div>
+				<div class="adjustment-row">
+					<span>Contrast</span>
+					<button class="zoom-btn" on:click={() => adjustContrast('down')}>-</button>
+					<span id="contrastValue">50</span>
+					<button class="zoom-btn" on:click={() => adjustContrast('up')}>+</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Day Camera Zoom controls -->
+		<div class="control-section">
+			<div class="control-label">DAY CAMERA ZOOM</div>
+			<div class="zoom-controls">
+				<button class="zoom-btn" on:click={() => setDayZoom('down')}>-</button>
+				<span id="dayZoomValue" class="zoom-value">1x</span>
+				<button class="zoom-btn" on:click={() => setDayZoom('up')}>+</button>
+			</div>
+		</div>
+
+		<!-- Night Camera Zoom controls -->
+		<div class="control-section">
+			<div class="control-label">NIGHT CAMERA ZOOM</div>
+			<div class="zoom-controls">
+				<button class="zoom-btn" on:click={() => setDigitalZoom('down')}>-</button>
+				<span id="nightZoomValue" class="zoom-value">1x</span>
+				<button class="zoom-btn" on:click={() => setDigitalZoom('up')}>+</button>
+			</div>
+		</div>
+
+		<!-- Focus controls -->
 		<div class="control-section">
 			<div class="control-label">FOCUS</div>
 			<div class="focus-controls">
