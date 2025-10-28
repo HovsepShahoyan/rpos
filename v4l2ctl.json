@@ -3,7 +3,7 @@
 {
 "brightness":60,
 "contrast":80,
-"palette":1,
+"palette":0,
 "codec":1,
 "far_focus":false,
 "near_focus":false,

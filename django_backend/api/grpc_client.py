@@ -79,3 +79,24 @@ class CameraGrpcClient:
             return {'az': response.az, 'el': response.el}
         except grpc.RpcError as e:
             return {'error': str(e)}
+
+    def send_control(self, prop, key, value):
+        request = camera_pb2.SendControlRequest()
+        request.prop = prop
+        request.key = key
+        request.value = str(value)
+        try:
+            response = self.stub.SendControl(request)
+            return {'success': response.success, 'message': response.message}
+        except grpc.RpcError as e:
+            return {'success': False, 'message': str(e)}
+
+    def set_ptz_direction(self, direction, start):
+        request = camera_pb2.SetPTZDirectionRequest()
+        request.direction = direction
+        request.start = start
+        try:
+            response = self.stub.SetPTZDirection(request)
+            return {'success': response.success, 'message': response.message}
+        except grpc.RpcError as e:
+            return {'success': False, 'message': str(e)}

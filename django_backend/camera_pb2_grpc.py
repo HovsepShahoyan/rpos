@@ -74,6 +74,16 @@ class CameraServiceStub(object):
                 request_serializer=camera__pb2.Empty.SerializeToString,
                 response_deserializer=camera__pb2.PTZPositionResponse.FromString,
                 _registered_method=True)
+        self.SendControl = channel.unary_unary(
+                '/camera.CameraService/SendControl',
+                request_serializer=camera__pb2.SendControlRequest.SerializeToString,
+                response_deserializer=camera__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.SetPTZDirection = channel.unary_unary(
+                '/camera.CameraService/SetPTZDirection',
+                request_serializer=camera__pb2.SetPTZDirectionRequest.SerializeToString,
+                response_deserializer=camera__pb2.StatusResponse.FromString,
+                _registered_method=True)
 
 
 class CameraServiceServicer(object):
@@ -127,6 +137,18 @@ class CameraServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SendControl(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetPTZDirection(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_CameraServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -169,6 +191,16 @@ def add_CameraServiceServicer_to_server(servicer, server):
                     servicer.GetPTZPosition,
                     request_deserializer=camera__pb2.Empty.FromString,
                     response_serializer=camera__pb2.PTZPositionResponse.SerializeToString,
+            ),
+            'SendControl': grpc.unary_unary_rpc_method_handler(
+                    servicer.SendControl,
+                    request_deserializer=camera__pb2.SendControlRequest.FromString,
+                    response_serializer=camera__pb2.StatusResponse.SerializeToString,
+            ),
+            'SetPTZDirection': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetPTZDirection,
+                    request_deserializer=camera__pb2.SetPTZDirectionRequest.FromString,
+                    response_serializer=camera__pb2.StatusResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -387,6 +419,60 @@ class CameraService(object):
             '/camera.CameraService/GetPTZPosition',
             camera__pb2.Empty.SerializeToString,
             camera__pb2.PTZPositionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SendControl(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/camera.CameraService/SendControl',
+            camera__pb2.SendControlRequest.SerializeToString,
+            camera__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetPTZDirection(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/camera.CameraService/SetPTZDirection',
+            camera__pb2.SetPTZDirectionRequest.SerializeToString,
+            camera__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
             insecure,

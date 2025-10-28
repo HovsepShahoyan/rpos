@@ -180,3 +180,32 @@ def schedule_reboot(request):
         return JsonResponse({'success': True, 'message': 'Reboot scheduled'})
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def send_control(request):
+    try:
+        body = json.loads(request.body)
+        prop = body.get('prop')
+        key = body.get('key')
+        value = body.get('value')
+        if not all([prop, key, value is not None]):
+            return JsonResponse({'error': 'Missing parameters'}, status=400)
+        data = grpc_client.send_control(prop, key, value)
+        return JsonResponse(data)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def set_ptz_direction(request):
+    try:
+        body = json.loads(request.body)
+        direction = body.get('direction')
+        start = body.get('start')
+        if direction is None or start is None:
+            return JsonResponse({'error': 'Missing parameters'}, status=400)
+        data = grpc_client.set_ptz_direction(direction, start)
+        return JsonResponse(data)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
