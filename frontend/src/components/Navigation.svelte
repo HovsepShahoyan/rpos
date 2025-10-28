@@ -45,16 +45,41 @@
 </nav>
 
 <style>
+	/* Enhanced Military Navigation Styling */
 	.navbar {
-		background: rgba(26, 32, 54, 0.6);
-		backdrop-filter: blur(12px);
-		-webkit-backdrop-filter: blur(12px);
-		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-		padding: 1rem 2rem;
-		position: sticky;
+		background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 25%, #2d2d2d 75%, #1a1a1a 100%);
+		backdrop-filter: blur(20px);
+		-webkit-backdrop-filter: blur(20px);
+		border-bottom: 3px solid #008800;
+		padding: 3rem 2rem;
+		position: fixed;
 		top: 0;
-		z-index: 1000;
+		left: 0;
+		right: 0;
+		z-index: 10001;
+		box-shadow:
+			0 4px 20px rgba(0, 0, 0, 0.8),
+			0 0 40px rgba(0, 136, 0, 0.1),
+			inset 0 1px 0 rgba(255, 255, 255, 0.1);
+		position: relative;
+		overflow: hidden;
 	}
+
+	.navbar::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background:
+			radial-gradient(circle at 20% 50%, rgba(0, 136, 0, 0.05) 0%, transparent 50%),
+			radial-gradient(circle at 80% 20%, rgba(0, 136, 0, 0.03) 0%, transparent 50%),
+			radial-gradient(circle at 40% 80%, rgba(170, 136, 0, 0.02) 0%, transparent 50%);
+		pointer-events: none;
+	}
+
+
 
 	.nav-container {
 		max-width: 1400px;
@@ -67,81 +92,160 @@
 	.nav-brand {
 		font-size: 1.5rem;
 		font-weight: 700;
-		color: #00d4aa;
+		color: #008800;
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 1px;
+		text-shadow: 0 0 10px #008800;
+	}
+
+	.nav-brand svg {
+		filter: drop-shadow(0 0 5px #008800);
 	}
 
 	.nav-menu {
 		display: flex;
 		list-style: none;
-		gap: 1.5rem;
+		gap: 1rem;
 		align-items: center;
 		margin: 0;
 		padding: 0;
 	}
 
 	.nav-link {
-		color: #b8c2e0;
-		background: none;
-		border: none;
-		padding: 0.5rem 1rem;
-		border-radius: 0.5rem;
-		transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+		color: #cccccc;
+		background: linear-gradient(135deg, #2d2d2d 0%, #3d3d3d 100%);
+		border: 2px solid #555555;
+		padding: 0.75rem 1.25rem;
+		border-radius: 6px;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 		position: relative;
 		cursor: pointer;
-		font-weight: 500;
-		font-size: 1rem;
-		font-family: inherit;
+		font-weight: 600;
+		font-size: 0.9rem;
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		min-width: 100px;
+		text-align: center;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 	}
 
-	.nav-link:hover,
+	.nav-link:hover {
+		color: #ffffff;
+		border-color: #008800;
+		background: linear-gradient(135deg, #3d3d3d 0%, #4d4d4d 100%);
+		transform: translateY(-2px);
+		box-shadow: 0 4px 15px rgba(0, 136, 0, 0.3);
+	}
+
 	.nav-link.active {
-		color: #f0f4ff;
-		background-color: rgba(0, 212, 170, 0.15);
+		color: #000000;
+		background: linear-gradient(135deg, #008800 0%, #00aa00 100%);
+		border-color: #008800;
+		font-weight: 700;
+		box-shadow: 0 0 20px rgba(0, 136, 0, 0.6);
+		transform: translateY(-1px);
+		text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
 	}
 
 	.nav-link.active::after {
 		content: '';
 		position: absolute;
-		bottom: -8px;
+		bottom: -6px;
 		left: 50%;
 		transform: translateX(-50%);
-		width: 24px;
+		width: 80%;
 		height: 3px;
-		background-color: #00d4aa;
+		background: #000000;
 		border-radius: 2px;
+		box-shadow: 0 0 10px #008800;
 	}
 
 	.status-indicator {
 		display: inline-flex;
-		width: 16px;
-		height: 16px;
+		width: 12px;
+		height: 12px;
 		border-radius: 50%;
-		margin-right: 0.75rem;
+		margin-right: 0.5rem;
 		vertical-align: middle;
 		position: relative;
+		border: 2px solid #008800;
 	}
 
 	.status-online {
-		background-color: #00d4aa;
-		box-shadow: 0 0 12px rgba(0, 212, 170, 0.7);
-		animation: pulse 2s infinite ease-out;
+		background-color: #008800;
+		box-shadow: 0 0 15px #008800;
+		animation: military-pulse 2s infinite ease-out;
 	}
 
-	@keyframes pulse {
+	@keyframes military-pulse {
 		0% {
 			transform: scale(1);
-			box-shadow: 0 0 0 0 rgba(0, 212, 170, 0.7);
+			box-shadow: 0 0 0 0 #00ff41;
+			opacity: 1;
 		}
 		50% {
-			transform: scale(1.05);
-			box-shadow: 0 0 0 10px rgba(0, 212, 170, 0);
+			transform: scale(1.2);
+			box-shadow: 0 0 0 8px rgba(0, 255, 65, 0);
+			opacity: 0.8;
 		}
 		100% {
 			transform: scale(1);
-			box-shadow: 0 0 0 0 rgba(0, 212, 170, 0);
+			box-shadow: 0 0 0 0 #00ff41;
+			opacity: 1;
+		}
+	}
+
+	@keyframes tactical-scan {
+		0% {
+			transform: translateX(-100%);
+		}
+		100% {
+			transform: translateX(100%);
+		}
+	}
+
+	/* Responsive Design */
+	@media (max-width: 1024px) {
+		.nav-menu {
+			gap: 0.5rem;
+		}
+
+		.nav-link {
+			padding: 0.5rem 0.75rem;
+			font-size: 0.8rem;
+			min-width: 80px;
+		}
+	}
+
+	@media (max-width: 768px) {
+		.navbar {
+			padding: 0.75rem 1rem;
+		}
+
+		.nav-brand {
+			font-size: 1.2rem;
+		}
+
+		.nav-container {
+			flex-direction: column;
+			gap: 1rem;
+		}
+
+		.nav-menu {
+			flex-wrap: wrap;
+			justify-content: center;
+			gap: 0.5rem;
+		}
+
+		.nav-link {
+			padding: 0.5rem;
+			font-size: 0.75rem;
+			min-width: 70px;
 		}
 	}
 </style>

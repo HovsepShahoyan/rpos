@@ -109,93 +109,207 @@
 </div>
 
 <style>
+	/* Military Telemetry Styling */
 	.page-header {
 		margin-bottom: 2.5rem;
+		text-align: center;
+		padding: 2rem;
+		background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+		border-radius: 12px;
+		border: 2px solid #555555;
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 	}
 
 	.page-title {
 		font-size: 2.25rem;
 		font-weight: 700;
 		margin-bottom: 0.75rem;
-		color: #f0f4ff;
-		background: linear-gradient(90deg, #00d4aa, #00b8ff);
-		-webkit-background-clip: text;
-		background-clip: text;
-		-webkit-text-fill-color: transparent;
+		color: #00ff41;
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 2px;
+		text-shadow: 0 0 20px #00ff41;
 		display: inline-block;
 	}
 
 	.page-subtitle {
-		color: #b8c2e0;
+		color: #cccccc;
 		font-size: 1.15rem;
 		max-width: 60ch;
+		margin: 0 auto;
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 1px;
 	}
 
 	.telemetry-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-		gap: 1.75rem;
+		grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+		gap: 2rem;
 	}
 
 	.card {
-		background: rgba(26, 32, 54, 0.6);
-		backdrop-filter: blur(8px);
-		border: 1px solid rgba(255, 255, 255, 0.1);
-		border-radius: 1rem;
-		padding: 1.75rem;
-		transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+		background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+		backdrop-filter: blur(12px);
+		border: 2px solid #555555;
+		border-radius: 8px;
+		padding: 2rem;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+		position: relative;
+		overflow: hidden;
+	}
+
+	.card::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 4px;
+		background: linear-gradient(90deg, #00ff41 0%, #39ff77 50%, #00ff41 100%);
+		box-shadow: 0 0 10px #00ff41;
 	}
 
 	.card:hover {
-		transform: translateY(-5px);
-		box-shadow: 0 15px 30px rgba(0, 0, 0, 0.3);
-		border-color: rgba(0, 212, 170, 0.3);
+		transform: translateY(-3px);
+		box-shadow: 0 12px 40px rgba(0, 255, 65, 0.2);
+		border-color: #00ff41;
 	}
 
 	.card-header {
-		margin-bottom: 1.25rem;
-		padding-bottom: 1.25rem;
-		border-bottom: 1px solid #3a4258;
+		margin-bottom: 1.5rem;
+		padding-bottom: 1.5rem;
+		border-bottom: 2px solid #555555;
+		position: relative;
 	}
 
 	.card-title {
-		font-size: 1.5rem;
+		font-size: 1.4rem;
 		font-weight: 700;
-		color: #00d4aa;
+		color: #00ff41;
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 1px;
+		text-shadow: 0 0 10px #00ff41;
 	}
 
 	.data-row {
 		display: grid;
 		grid-template-columns: 1fr auto;
 		align-items: center;
-		gap: 1rem;
-		padding: 1.25rem;
-		border-radius: 0.75rem;
-		transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-		margin-bottom: 0.75rem;
-		background-color: #1a2036;
+		gap: 1.25rem;
+		padding: 1.5rem;
+		border-radius: 6px;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		margin-bottom: 1rem;
+		background: linear-gradient(135deg, #2d2d2d 0%, #3d3d3d 100%);
+		border: 1px solid #555555;
+		position: relative;
 	}
 
 	.data-row:hover {
-		background-color: rgba(0, 212, 170, 0.15);
-		transform: translateX(5px);
+		background: linear-gradient(135deg, #3d3d3d 0%, #4d4d4d 100%);
+		border-color: #00ff41;
+		transform: translateX(3px);
+		box-shadow: 0 0 15px rgba(0, 255, 65, 0.1);
+	}
+
+	.data-row:hover::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 4px;
+		background: #00ff41;
+		box-shadow: 0 0 10px #00ff41;
 	}
 
 	.data-label {
-		color: #b8c2e0;
+		color: #cccccc;
 		font-weight: 600;
-		font-size: 1.05rem;
+		font-size: 1rem;
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
 	}
 
 	.data-value {
-		font-family: 'Fira Code', 'Courier New', monospace;
-		color: #00d4aa;
+		font-family: 'Courier New', monospace;
+		color: #00ff41;
 		font-weight: 700;
-		background-color: rgba(0, 212, 170, 0.1);
-		padding: 0.75rem 1.25rem;
-		border-radius: 0.75rem;
-		min-width: 120px;
+		background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+		padding: 0.875rem 1.5rem;
+		border-radius: 4px;
+		min-width: 140px;
 		text-align: center;
-		border: 1px solid rgba(0, 212, 170, 0.2);
+		border: 2px solid #555555;
+		text-shadow: 0 0 5px #00ff41;
+		font-size: 1.1rem;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+	}
+
+	.data-value:hover {
+		border-color: #00ff41;
+		box-shadow: 0 0 15px rgba(0, 255, 65, 0.3);
+	}
+
+	/* Loading state styling */
+	.data-value:has-text('Loading...'),
+	.data-value:has-text('...') {
+		color: #ffaa00;
+		text-shadow: 0 0 5px #ffaa00;
+		animation: blink 1.5s infinite;
+	}
+
+	@keyframes blink {
+		0%, 50% { opacity: 1; }
+		51%, 100% { opacity: 0.6; }
+	}
+
+	/* Responsive Design */
+	@media (max-width: 1200px) {
+		.telemetry-grid {
+			grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+			gap: 1.5rem;
+		}
+	}
+
+	@media (max-width: 768px) {
+		.page-header {
+			padding: 1.5rem;
+			margin-bottom: 2rem;
+		}
+
+		.page-title {
+			font-size: 1.8rem;
+		}
+
+		.page-subtitle {
+			font-size: 1rem;
+		}
+
+		.telemetry-grid {
+			grid-template-columns: 1fr;
+			gap: 1.5rem;
+		}
+
+		.card {
+			padding: 1.5rem;
+		}
+
+		.data-row {
+			padding: 1rem;
+			grid-template-columns: 1fr;
+			gap: 0.5rem;
+			text-align: center;
+		}
+
+		.data-value {
+			min-width: 120px;
+		}
 	}
 </style>

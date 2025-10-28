@@ -1,9 +1,10 @@
-ye<script>
+
+ <script>
 	import { onMount } from 'svelte';
 	import { currentStream, currentSpeed } from '../stores/camera.js';
 	import { angles, distance } from '../stores/telemetry.js';
 	import { showToast } from '../stores/ui.js';
-	import { setSpeed, setCurrentStream, sendControlValue } from '../utils/api.js';
+	import { setSpeed, setCurrentStream, sendControlValue, setPTZDirection } from '../utils/api.js';
 	import {
 		GO2RTC_BASE,
 		BASE_FOV_HORIZONTAL,
@@ -76,12 +77,7 @@ ye<script>
 	}
 
 	function handlePTZButton(control, value) {
-		const body = `UserControls.${control}=${value}`;
-		fetch('/', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body
-		}).catch(err => console.error('PTZ control error:', err));
+		setPTZDirection(control, value === 'true').catch(err => console.error('PTZ control error:', err));
 	}
 
 	function movePTZ(dir) {
@@ -254,19 +250,8 @@ ye<script>
 		let newVertical = result[1];
 
 		// Send PTZ command
-		const body = `az=${encodeURIComponent(newHorizontal)}&el=${encodeURIComponent(newVertical)}`;
-		fetch('/api/ptzMove', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/x-www-form-urlencoded'
-			},
-			body
-		}).then(function(response) {
-			if (response.ok) {
-				console.log('PTZ move sent successfully');
-			} else {
-				console.error('Failed to send PTZ move command:', response.status);
-			}
+		movePTZ(newHorizontal, newVertical).then(function(response) {
+			console.log('PTZ move sent successfully');
 		}).catch(function(error) {
 			console.error('Error sending PTZ move command:', error);
 		});
@@ -305,7 +290,7 @@ ye<script>
 
 			img.style.position = 'absolute';
 			img.style.pointerEvents = 'none';
-			img.style.zIndex = String(10000 + streamNumber);
+			img.style.zIndex = String(9999 + streamNumber);
 			img.style.width = 'auto';
 			img.style.height = 'auto';
 			img.style.maxWidth = 'none';
@@ -474,12 +459,7 @@ ye<script>
 		}
 		const value = dayZoomValues[currentDayZoomIndex];
 		sendControlValue('UserControls', 'day_zoom', value);
-		const level = currentDayZoomIndex + 1;
-		fetch('/api/setZoomLevel', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ level })
-		}).catch(console.error);
+		setZoomLevel(currentDayZoomIndex + 1).catch(console.error);
 		document.getElementById('dayZoomValue').textContent = value + 'x';
 		showToast('Day Zoom set to ' + value + 'x', 'success');
 	}
@@ -615,7 +595,7 @@ ye<script>
 
 			<!-- Transparent overlay to capture clicks -->
 			<div id="videoOverlay"
-				style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: auto; z-index: 1000; background: transparent; cursor: crosshair;">
+				style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: auto; z-index: 998; background: transparent; cursor: crosshair;">
 			</div>
 
 			<div class="video-overlay">
@@ -780,97 +760,192 @@ ye<script>
 </div>
 
 <style>
+	/* Military-Style CSS Variables for consistent theming */
+	:root {
+		--primary-bg: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+		--secondary-bg: linear-gradient(135deg, #2d2d2d 0%, #3d3d3d 100%);
+		--accent-color: #00ff41; /* Military green */
+		--accent-hover: #39ff77;
+		--warning-color: #ffaa00; /* Military amber */
+		--warning-hover: #ffcc00;
+		--danger-color: #ff4444; /* Military red */
+		--text-primary: #ffffff;
+		--text-secondary: #cccccc;
+		--text-muted: #888888;
+		--border-color: #555555;
+		--border-hover: #777777;
+		--shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+		--shadow-hover: 0 12px 40px rgba(0, 255, 65, 0.15);
+		--border-radius: 6px;
+		--transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	/* Global improvements */
+	* {
+		box-sizing: border-box;
+	}
+
 	.page-header {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		margin-bottom: 1.5rem;
+		margin-bottom: 2rem;
 		gap: 2rem;
 		flex-wrap: wrap;
+		padding: 1.5rem;
+		background: var(--primary-bg);
+		border-radius: var(--border-radius);
+		border: 1px solid var(--border-color);
+		box-shadow: var(--shadow);
+		backdrop-filter: blur(20px);
 	}
 
 	.angles-top {
 		display: flex;
-		gap: 1rem;
-		font-size: 0.9rem;
-		color: #b8c2e0;
+		gap: 1.5rem;
+		font-size: 0.95rem;
+		color: var(--text-secondary);
+		align-items: center;
 	}
 
 	.angles-top div {
-		background: #1a2036;
-		padding: 0.5rem 1rem;
-		border-radius: 0.5rem;
-		border: 1px solid #3a4258;
+		background: var(--secondary-bg);
+		padding: 0.75rem 1.25rem;
+		border-radius: 8px;
+		border: 1px solid var(--border-color);
+		transition: var(--transition);
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-weight: 500;
+		min-width: 120px;
+		justify-content: space-between;
+	}
+
+	.angles-top div:hover {
+		border-color: var(--accent-color);
+		box-shadow: 0 0 20px rgba(0, 212, 170, 0.1);
 	}
 
 	.angles-top span {
-		color: #00d4aa;
+		color: var(--accent-color);
 		font-weight: 700;
-	}
-
-	.page-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 1.5rem;
-		gap: 2rem;
-		flex-wrap: wrap;
+		font-size: 1.1rem;
+		text-shadow: 0 0 10px var(--accent-color);
+		font-family: 'Courier New', monospace;
 	}
 
 	.stream-selector {
 		display: flex;
-		gap: 0.75rem;
+		gap: 1rem;
+		align-items: center;
 	}
 
 	.stream-btn {
-		background: rgba(0, 0, 0, 0.7);
-		color: white;
-		border: 1px solid #00d4aa;
-		border-radius: 0.5rem;
-		padding: 0.75rem 1.5rem;
+		background: var(--secondary-bg);
+		color: var(--text-primary);
+		border: 2px solid var(--border-color);
+		border-radius: var(--border-radius);
+		padding: 0.875rem 1.75rem;
 		font-size: 1rem;
-		font-weight: 500;
+		font-weight: 600;
 		cursor: pointer;
-		transition: all 0.2s ease;
-		min-width: 120px;
+		transition: var(--transition);
+		min-width: 140px;
+		position: relative;
+		overflow: hidden;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.stream-btn::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: -100%;
+		width: 100%;
+		height: 100%;
+		background: linear-gradient(90deg, transparent, rgba(0, 212, 170, 0.2), transparent);
+		transition: left 0.5s;
+	}
+
+	.stream-btn:hover::before {
+		left: 100%;
+	}
+
+	.stream-btn:hover {
+		border-color: var(--accent-color);
+		transform: translateY(-2px);
+		box-shadow: var(--shadow-hover);
 	}
 
 	.stream-btn.active {
-		background: #00d4aa;
-		color: #0f111a;
-		font-weight: 600;
+		background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-hover) 100%);
+		color: #000000;
+		border-color: var(--accent-color);
+		font-weight: 700;
+		box-shadow: 0 0 30px var(--accent-color);
+		transform: translateY(-1px);
+		text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
 	}
 
 	.standard-button {
-		padding: 0.75rem 1.5rem;
-		background-color: #00d4aa;
-		color: #0f111a;
-		border: none;
-		border-radius: 0.75rem;
+		padding: 0.875rem 2rem;
+		background: linear-gradient(135deg, var(--warning-color) 0%, var(--warning-hover) 100%);
+		color: #000000;
+		border: 2px solid var(--border-color);
+		border-radius: var(--border-radius);
 		font-size: 1rem;
-		font-weight: 600;
+		font-weight: 700;
 		cursor: pointer;
-		transition: all 0.3s ease;
+		transition: var(--transition);
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		position: relative;
+		overflow: hidden;
+		box-shadow: 0 4px 15px var(--warning-color);
+		font-family: 'Courier New', monospace;
+	}
+
+	.standard-button::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: -100%;
+		width: 100%;
+		height: 100%;
+		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+		transition: left 0.5s;
+	}
+
+	.standard-button:hover::before {
+		left: 100%;
 	}
 
 	.standard-button:hover {
-		background-color: #00f5c2;
-		transform: translateY(-2px);
+		transform: translateY(-3px);
+		box-shadow: 0 8px 25px rgba(0, 212, 170, 0.5);
+	}
+
+	.standard-button:active {
+		transform: translateY(-1px);
 	}
 
 	.stream-interface {
 		display: grid;
-		grid-template-columns: minmax(0, 3fr) 340px;
-		gap: 1.5rem;
-		height: calc(100vh - 200px);
+		grid-template-columns: minmax(0, 3fr) 380px;
+		gap: 2rem;
+		height: calc(100vh - 220px);
 	}
 
 	.video-container {
 		position: relative;
-		background: #000;
-		border-radius: 0.75rem;
+		background: linear-gradient(135deg, #000000 0%, #111111 100%);
+		border-radius: var(--border-radius);
 		overflow: hidden;
 		height: 100%;
+		border: 2px solid var(--border-color);
+		box-shadow: var(--shadow);
 	}
 
 	.video-wrapper {
@@ -883,13 +958,14 @@ ye<script>
 		width: 100%;
 		height: 100%;
 		border: 0;
+		border-radius: var(--border-radius);
 	}
 
 	:global(#overlay-container) {
 		position: absolute;
 		inset: 0;
 		pointer-events: none;
-		z-index: 9999;
+		z-index: 9998;
 		background: transparent;
 		overflow: visible;
 	}
@@ -897,12 +973,13 @@ ye<script>
 	:global(.crosshair-overlay) {
 		position: absolute;
 		pointer-events: none;
-		z-index: 10000;
+		z-index: 9999;
 		width: auto;
 		height: auto;
 		max-width: none;
 		max-height: none;
 		transform: translate(-50%, -50%);
+		filter: drop-shadow(0 0 10px rgba(0, 212, 170, 0.5));
 	}
 
 	:global(#videoOverlay) {
@@ -919,9 +996,9 @@ ye<script>
 
 	.video-overlay {
 		position: absolute;
-		top: 1rem;
-		left: 1rem;
-		right: 1rem;
+		top: 1.5rem;
+		left: 1.5rem;
+		right: 1.5rem;
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
@@ -932,66 +1009,103 @@ ye<script>
 	.stream-status {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		background: rgba(0, 0, 0, 0.7);
-		padding: 0.5rem 1rem;
-		border-radius: 0.5rem;
-		color: #f0f4ff;
-		font-size: 0.9rem;
-		font-weight: 500;
-	}
-
-	.stream-selector {
-		display: flex;
 		gap: 0.75rem;
-		pointer-events: auto;
-	}
-
-	.stream-btn {
-		background: rgba(0, 0, 0, 0.7);
-		color: white;
-		border: 1px solid #00d4aa;
-		border-radius: 0.5rem;
-		padding: 0.75rem 1.5rem;
-		font-size: 1rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: all 0.2s ease;
-		min-width: 120px;
-	}
-
-	.stream-btn.active {
-		background: #00d4aa;
-		color: #0f111a;
+		background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+		backdrop-filter: blur(10px);
+		padding: 0.75rem 1.25rem;
+		border-radius: 8px;
+		color: var(--accent-color);
+		font-size: 0.9rem;
 		font-weight: 600;
+		border: 2px solid var(--border-color);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.status-indicator {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		background: var(--accent-color);
+		box-shadow: 0 0 15px var(--accent-color);
+		animation: pulse 2s infinite;
+		border: 1px solid var(--accent-color);
+	}
+
+	@keyframes pulse {
+		0% { opacity: 1; }
+		50% { opacity: 0.5; }
+		100% { opacity: 1; }
 	}
 
 	.controls-panel {
 		display: flex;
 		flex-direction: column;
-		gap: 1.5rem;
-		background: rgba(26, 32, 54, 0.6);
-		backdrop-filter: blur(8px);
+		gap: 2rem;
+		background: var(--primary-bg);
+		backdrop-filter: blur(20px);
 		border: 1px solid rgba(255, 255, 255, 0.1);
-		border-radius: 1rem;
-		padding: 1.25rem;
+		border-radius: var(--border-radius);
+		padding: 1.5rem;
 		height: 100%;
 		overflow-y: auto;
+		box-shadow: var(--shadow);
+		scrollbar-width: thin;
+		scrollbar-color: var(--accent-color) transparent;
+	}
+
+	.controls-panel::-webkit-scrollbar {
+		width: 6px;
+	}
+
+	.controls-panel::-webkit-scrollbar-track {
+		background: transparent;
+	}
+
+	.controls-panel::-webkit-scrollbar-thumb {
+		background: var(--accent-color);
+		border-radius: 3px;
 	}
 
 	.control-section {
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
+		gap: 1.25rem;
+		padding: 1rem;
+		background: var(--secondary-bg);
+		border-radius: 10px;
+		border: 1px solid var(--border-color);
+		transition: var(--transition);
+	}
+
+	.control-section:hover {
+		border-color: var(--accent-color);
+		box-shadow: 0 0 20px rgba(0, 212, 170, 0.1);
 	}
 
 	.control-label {
-		font-size: 0.9rem;
-		font-weight: 700;
-		color: #00d4aa;
+		font-size: 0.85rem;
+		font-weight: 800;
+		color: var(--accent-color);
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		letter-spacing: 1px;
 		margin-bottom: 0.5rem;
+		text-align: center;
+		position: relative;
+	}
+
+	.control-label::after {
+		content: '';
+		position: absolute;
+		bottom: -5px;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 30px;
+		height: 2px;
+		background: var(--accent-color);
+		border-radius: 1px;
 	}
 
 	.ptz-controls-fast {
@@ -1002,149 +1116,236 @@ ye<script>
 	.ptz-grid-fast {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
-		gap: 0.6rem;
+		gap: 0.75rem;
 		width: 100%;
-		max-width: 220px;
+		max-width: 240px;
 	}
 
 	.ptz-arrow-fast {
 		aspect-ratio: 1;
-		background: #1a2036;
-		border: 1px solid #3a4258;
-		border-radius: 0.5rem;
-		color: #f0f4ff;
-		font-size: 1.3rem;
+		background: var(--secondary-bg);
+		border: 2px solid var(--border-color);
+		border-radius: 10px;
+		color: var(--text-primary);
+		font-size: 1.4rem;
 		cursor: pointer;
-		transition: all 0.2s ease;
+		transition: var(--transition);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		padding: 0.75rem;
+		padding: 0.875rem;
+		position: relative;
+		overflow: hidden;
+		font-weight: 600;
+	}
+
+	.ptz-arrow-fast::before {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: 0;
+		height: 0;
+		background: rgba(0, 212, 170, 0.2);
+		border-radius: 50%;
+		transform: translate(-50%, -50%);
+		transition: width 0.3s, height 0.3s;
+	}
+
+	.ptz-arrow-fast:hover::before {
+		width: 120%;
+		height: 120%;
+	}
+
+	.ptz-arrow-fast:hover {
+		border-color: var(--accent-color);
+		transform: translateY(-2px);
+		box-shadow: var(--shadow-hover);
+		color: var(--accent-color);
+	}
+
+	.ptz-arrow-fast:active {
+		transform: translateY(0);
 	}
 
 	.ptz-center-fast {
-		background: #00d4aa;
-		color: #0f111a;
-		font-size: 1.6rem;
+		background: linear-gradient(135deg, var(--warning-color) 0%, var(--warning-hover) 100%);
+		color: #000000;
+		font-size: 1.8rem;
+		border-color: var(--warning-color);
+		box-shadow: 0 0 20px var(--warning-color);
+		font-weight: 900;
 	}
 
 	.speed-controls {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.75rem;
 	}
 
 	.speed-row {
 		display: flex;
-		gap: 0.5rem;
+		gap: 0.75rem;
 		justify-content: center;
 	}
 
 	.speed-btn {
 		flex: 1;
-		padding: 0.6rem 0.5rem;
-		font-size: 0.95rem;
-		background: #1a2036;
-		border: 1px solid #3a4258;
-		border-radius: 0.5rem;
+		padding: 0.75rem 0.625rem;
+		font-size: 1rem;
+		background: var(--secondary-bg);
+		border: 2px solid var(--border-color);
+		border-radius: 8px;
 		cursor: pointer;
-		transition: all 0.2s ease;
+		transition: var(--transition);
 		text-align: center;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		min-width: 50px;
+	}
+
+	.speed-btn:hover {
+		border-color: var(--accent-color);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px rgba(0, 212, 170, 0.2);
 	}
 
 	.speed-btn.active {
-		background: #00d4aa;
-		color: #0f111a;
-		font-weight: 600;
+		background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-hover) 100%);
+		color: #000000;
+		border-color: var(--accent-color);
+		font-weight: 700;
+		box-shadow: 0 0 20px var(--accent-color);
+		transform: translateY(-1px);
+		text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
 	}
 
 	.focus-controls {
 		display: flex;
 		justify-content: center;
-		gap: 1rem;
+		gap: 1.25rem;
 	}
 
 	.focus-btn {
 		flex: 1;
-		padding: 0.75rem;
-		font-size: 0.95rem;
-		background: #1a2036;
-		border: 1px solid #3a4258;
-		border-radius: 0.5rem;
+		padding: 0.875rem 1rem;
+		font-size: 1rem;
+		background: var(--secondary-bg);
+		border: 2px solid var(--border-color);
+		border-radius: 8px;
 		cursor: pointer;
-		transition: all 0.2s ease;
+		transition: var(--transition);
 		text-align: center;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		min-width: 100px;
 	}
 
 	.focus-btn:hover {
-		background: #00f5c2;
+		background: var(--accent-hover);
 		color: #0f111a;
+		border-color: var(--accent-color);
+		transform: translateY(-2px);
+		box-shadow: var(--shadow-hover);
 	}
 
 	/* Thermal Mode Buttons */
 	.mode-selector {
 		display: flex;
-		gap: 0.5rem;
+		gap: 0.75rem;
 		justify-content: center;
 	}
 
 	.mode-btn {
 		flex: 1;
-		padding: 0.75rem 1rem;
-		font-size: 0.95rem;
-		font-weight: 500;
-		background: #1a2036;
-		border: 1px solid #3a4258;
-		border-radius: 0.5rem;
-		color: #f0f4ff;
+		padding: 0.875rem 1.25rem;
+		font-size: 1rem;
+		font-weight: 600;
+		background: var(--secondary-bg);
+		border: 2px solid var(--border-color);
+		border-radius: 8px;
+		color: var(--text-primary);
 		cursor: pointer;
-		transition: all 0.2s ease;
+		transition: var(--transition);
 		text-align: center;
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		letter-spacing: 1px;
+		min-width: 120px;
+		position: relative;
+		overflow: hidden;
+	}
+
+	.mode-btn::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: -100%;
+		width: 100%;
+		height: 100%;
+		background: linear-gradient(90deg, transparent, rgba(0, 212, 170, 0.2), transparent);
+		transition: left 0.5s;
+	}
+
+	.mode-btn:hover::before {
+		left: 100%;
 	}
 
 	.mode-btn:hover {
-		background: #2a3441;
-		border-color: #00d4aa;
-		transform: translateY(-1px);
+		border-color: var(--accent-color);
+		transform: translateY(-2px);
+		box-shadow: var(--shadow-hover);
 	}
 
 	.mode-btn.active {
-		background: #00d4aa;
-		color: #0f111a;
-		border-color: #00d4aa;
-		font-weight: 600;
-		box-shadow: 0 0 10px rgba(0, 212, 170, 0.3);
+		background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-hover) 100%);
+		color: #000000;
+		border-color: var(--accent-color);
+		font-weight: 700;
+		box-shadow: 0 0 30px var(--accent-color);
+		transform: translateY(-1px);
+		text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
 	}
 
 	/* Image Adjustments */
 	.image-controls {
 		display: flex;
 		flex-direction: column;
-		gap: 1rem;
+		gap: 1.25rem;
 	}
 
 	.adjustment-row {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 0.5rem;
+		gap: 0.75rem;
+		padding: 0.5rem;
+		background: rgba(0, 0, 0, 0.2);
+		border-radius: 6px;
+		border: 1px solid var(--border-color);
+	}
+
+	.adjustment-row:hover {
+		border-color: var(--accent-color);
+		background: rgba(0, 212, 170, 0.05);
 	}
 
 	.adjustment-row span {
 		font-size: 0.9rem;
-		color: #b8c2e0;
+		color: var(--text-secondary);
 		font-weight: 500;
 		min-width: 80px;
 	}
 
 	.adjustment-row span[id] {
-		font-size: 1rem;
-		color: #00d4aa;
+		font-size: 1.1rem;
+		color: var(--accent-color);
 		font-weight: 700;
 		text-align: center;
-		min-width: 40px;
+		min-width: 50px;
+		text-shadow: 0 0 10px var(--accent-color);
+		font-family: 'Courier New', monospace;
 	}
 
 	/* Zoom Controls */
@@ -1152,50 +1353,160 @@ ye<script>
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 0.5rem;
+		gap: 0.75rem;
 	}
 
 	.zoom-value {
-		font-size: 1rem;
-		color: #00d4aa;
+		font-size: 1.2rem;
+		color: var(--accent-color);
 		font-weight: 700;
-		min-width: 40px;
+		min-width: 50px;
 		text-align: center;
+		text-shadow: 0 0 10px var(--accent-color);
+		padding: 0.5rem;
+		background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+		border-radius: 6px;
+		border: 2px solid var(--border-color);
+		font-family: 'Courier New', monospace;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 	}
 
 	/* Shared Button Styles for Zoom and Adjustments */
 	.zoom-btn {
-		width: 40px;
-		height: 40px;
-		background: #1a2036;
-		border: 1px solid #3a4258;
-		border-radius: 0.5rem;
-		color: #f0f4ff;
-		font-size: 1.2rem;
-		font-weight: 600;
+		width: 45px;
+		height: 45px;
+		background: var(--secondary-bg);
+		border: 2px solid var(--border-color);
+		border-radius: 10px;
+		color: var(--text-primary);
+		font-size: 1.4rem;
+		font-weight: 700;
 		cursor: pointer;
-		transition: all 0.2s ease;
+		transition: var(--transition);
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		position: relative;
+		overflow: hidden;
+	}
+
+	.zoom-btn::before {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: 0;
+		height: 0;
+		background: rgba(0, 212, 170, 0.2);
+		border-radius: 50%;
+		transform: translate(-50%, -50%);
+		transition: width 0.3s, height 0.3s;
+	}
+
+	.zoom-btn:hover::before {
+		width: 120%;
+		height: 120%;
 	}
 
 	.zoom-btn:hover {
-		background: #2a3441;
-		border-color: #00d4aa;
-		transform: translateY(-1px);
-		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+		border-color: var(--accent-color);
+		transform: translateY(-2px);
+		box-shadow: var(--shadow-hover);
+		color: var(--accent-color);
+	}
+	.zoom-btn:active {
+		background: var(--accent-color);
+		color: #000000;
+		transform: translateY(0);
+		text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
 	}
 
-	.zoom-btn:active {
-		background: #00d4aa;
-		color: #0f111a;
-		transform: translateY(0);
+	/* Form controls styling */
+	.form-control {
+		background: var(--secondary-bg);
+		border: 2px solid var(--border-color);
+		border-radius: 8px;
+		color: var(--text-primary);
+		padding: 0.5rem;
+		font-size: 0.9rem;
+		transition: var(--transition);
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.form-control:focus {
+		outline: none;
+		border-color: var(--accent-color);
+		box-shadow: 0 0 20px var(--accent-color);
+		background: linear-gradient(135deg, #2d2d2d 0%, #3d3d3d 100%);
 	}
 
 	@keyframes clickFeedback {
 		0% { opacity: 1; transform: scale(1); }
 		50% { opacity: 0.8; transform: scale(1.5); }
 		100% { opacity: 0; transform: scale(2); }
+	}
+
+	@keyframes header-scan {
+		0% {
+			transform: translateX(-100%);
+		}
+		100% {
+			transform: translateX(100%);
+		}
+	}
+
+	@keyframes tactical-scan {
+		0% {
+			transform: translateX(-100%);
+		}
+		100% {
+			transform: translateX(100%);
+		}
+	}
+
+	/* Responsive design */
+	@media (max-width: 1200px) {
+		.stream-interface {
+			grid-template-columns: 1fr;
+			grid-template-rows: 1fr auto;
+			height: auto;
+			gap: 1.5rem;
+		}
+
+		.controls-panel {
+			max-height: 400px;
+		}
+	}
+
+	@media (max-width: 768px) {
+		.page-header {
+			flex-direction: column;
+			align-items: stretch;
+			gap: 1rem;
+		}
+
+		.angles-top {
+			justify-content: center;
+			flex-wrap: wrap;
+		}
+
+		.stream-selector {
+			justify-content: center;
+		}
+
+		.ptz-grid-fast {
+			max-width: 200px;
+		}
+
+		.speed-row {
+			flex-wrap: wrap;
+		}
+
+		.mode-selector {
+			flex-direction: column;
+			gap: 0.5rem;
+		}
 	}
 </style>

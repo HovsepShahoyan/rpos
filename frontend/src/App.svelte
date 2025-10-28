@@ -79,7 +79,7 @@
 		flex: 1;
 		max-width: 1400px;
 		margin: 2rem auto;
-		padding: 0 2rem;
+		padding: 6rem 2rem 0 2rem;
 		width: 100%;
 	}
 

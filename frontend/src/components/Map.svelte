@@ -125,46 +125,192 @@
 </div>
 
 <style>
+	/* Military Map Styling */
 	.page-header {
 		margin-bottom: 2rem;
+		text-align: center;
+		padding: 2rem;
+		background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+		border-radius: 12px;
+		border: 2px solid #555555;
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 	}
 
 	.page-title {
 		font-size: 2.25rem;
 		font-weight: 700;
 		margin-bottom: 0.75rem;
-		background: linear-gradient(90deg, #00d4aa, #00b8ff);
-		-webkit-background-clip: text;
-		background-clip: text;
-		-webkit-text-fill-color: transparent;
+		color: #00ff41;
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 2px;
+		text-shadow: 0 0 20px #00ff41;
 		display: inline-block;
 	}
 
 	.page-subtitle {
-		color: #b8c2e0;
+		color: #cccccc;
 		font-size: 1.15rem;
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 1px;
 	}
 
 	.map-card {
-		background: rgba(26, 32, 54, 0.6);
-		backdrop-filter: blur(8px);
-		border: 1px solid rgba(255, 255, 255, 0.1);
-		border-radius: 1rem;
+		background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+		backdrop-filter: blur(12px);
+		border: 2px solid #555555;
+		border-radius: 8px;
 		padding: 0;
 		height: calc(100vh - 300px);
 		min-height: 500px;
 		display: flex;
 		flex-direction: column;
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+		position: relative;
+		overflow: hidden;
+	}
+
+	.map-card::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 4px;
+		background: linear-gradient(90deg, #00ff41 0%, #39ff77 50%, #00ff41 100%);
+		box-shadow: 0 0 10px #00ff41;
+		z-index: 10;
 	}
 
 	.controls {
 		flex-shrink: 0;
+		background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%) !important;
+		border-bottom: 2px solid #555555;
+		padding: 1.5rem !important;
+		display: flex !important;
+		gap: 2rem !important;
+		align-items: center !important;
+		flex-wrap: wrap !important;
+		position: relative;
+	}
+
+	.controls::before {
+		content: '';
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 1px;
+		background: linear-gradient(90deg, transparent 0%, #00ff41 50%, transparent 100%);
+		opacity: 0.5;
+	}
+
+	label {
+		color: #cccccc !important;
+		font-family: 'Courier New', monospace !important;
+		text-transform: uppercase !important;
+		letter-spacing: 0.5px !important;
+		font-size: 0.9rem !important;
+		font-weight: 600 !important;
+		display: flex !important;
+		align-items: center !important;
+		gap: 0.5rem !important;
+		cursor: pointer !important;
+	}
+
+	input[type="range"] {
+		width: 200px !important;
+		height: 6px !important;
+		border-radius: 3px !important;
+		background: linear-gradient(135deg, #555555 0%, #777777 100%) !important;
+		outline: none !important;
+		cursor: pointer !important;
+		-webkit-appearance: none !important;
+		appearance: none !important;
+	}
+
+	input[type="range"]::-webkit-slider-thumb {
+		-webkit-appearance: none !important;
+		appearance: none !important;
+		width: 18px !important;
+		height: 18px !important;
+		border-radius: 50% !important;
+		background: linear-gradient(135deg, #00ff41 0%, #39ff77 100%) !important;
+		cursor: pointer !important;
+		box-shadow: 0 0 8px #00ff41 !important;
+		border: 2px solid #000000 !important;
+	}
+
+	input[type="range"]::-moz-range-thumb {
+		width: 18px !important;
+		height: 18px !important;
+		border-radius: 50% !important;
+		background: linear-gradient(135deg, #00ff41 0%, #39ff77 100%) !important;
+		cursor: pointer !important;
+		box-shadow: 0 0 8px #00ff41 !important;
+		border: 2px solid #000000 !important;
+	}
+
+	input[type="checkbox"] {
+		width: 16px !important;
+		height: 16px !important;
+		accent-color: #00ff41 !important;
+		cursor: pointer !important;
+		border-radius: 3px !important;
+	}
+
+	span {
+		color: #00ff41 !important;
+		font-family: 'Courier New', monospace !important;
+		text-transform: uppercase !important;
+		letter-spacing: 0.5px !important;
+		font-weight: 700 !important;
+		font-size: 1rem !important;
+		text-shadow: 0 0 5px #00ff41 !important;
+		min-width: 50px !important;
+		text-align: center !important;
 	}
 
 	.map-container {
 		flex: 1;
 		width: 100%;
-		border-radius: 0 0 1rem 1rem;
+		border-radius: 0 0 8px 8px;
 		overflow: hidden;
+		position: relative;
+	}
+
+
+
+	/* Responsive Design */
+	@media (max-width: 1024px) {
+		.controls {
+			flex-direction: column !important;
+			align-items: stretch !important;
+			gap: 1rem !important;
+		}
+
+		input[type="range"] {
+			width: 100% !important;
+		}
+	}
+
+	@media (max-width: 768px) {
+		.page-header {
+			padding: 1.5rem;
+			margin-bottom: 2rem;
+		}
+
+		.page-title {
+			font-size: 1.8rem;
+		}
+
+		.map-card {
+			height: calc(100vh - 350px);
+		}
+
+		.controls {
+			padding: 1rem !important;
+		}
 	}
 </style>
