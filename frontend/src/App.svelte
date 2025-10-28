@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import Navigation from './components/Navigation.svelte';
 	import FastLive from './components/FastLive.svelte';
+	import Fullscreen from './components/Fullscreen.svelte';
 	import Map from './components/Map.svelte';
 	import Telemetry from './components/Telemetry.svelte';
 	import Settings from './components/Settings.svelte';
@@ -9,8 +10,8 @@
 	import Logs from './components/Logs.svelte';
 	import Reboot from './components/Reboot.svelte';
 	import { currentPage, toasts } from './stores/ui.js';
-	import { 
-		startTelemetryPolling, 
+	import {
+		startTelemetryPolling,
 		stopTelemetryPolling,
 		startAnglesPolling,
 		stopAnglesPolling,
@@ -35,9 +36,11 @@
 
 <Navigation />
 
-<main class="main-container">
+<main class="main-container {$currentPage === 'fullscreen' ? 'fullscreen-page' : ''}">
 	{#if $currentPage === 'fastlive'}
 		<FastLive />
+	{:else if $currentPage === 'fullscreen'}
+		<Fullscreen />
 	{:else if $currentPage === 'map'}
 		<Map />
 	{:else if $currentPage === 'telemetry'}
@@ -81,6 +84,13 @@
 		margin: 2rem auto;
 		padding: 6rem 2rem 0 2rem;
 		width: 100%;
+	}
+
+	:global(.fullscreen-page .main-container) {
+		margin: 0;
+		padding: 4rem 0 0 0;
+		max-width: none;
+		width: 100vw;
 	}
 
 	.toast-container {

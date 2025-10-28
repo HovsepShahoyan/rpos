@@ -3,6 +3,7 @@
 
 	const pages = [
 		{ id: 'fastlive', label: 'Fast Live' },
+		{ id: 'fullscreen', label: 'Fullscreen' },
 		{ id: 'map', label: 'Map' },
 		{ id: 'telemetry', label: 'Telemetry' },
 		{ id: 'settings', label: 'Settings' },
