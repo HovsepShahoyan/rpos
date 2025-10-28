@@ -1,6 +1,0 @@
-django
-requests
-django-cors-headers
-grpcio
-grpcio-tools
-python-dotenv
