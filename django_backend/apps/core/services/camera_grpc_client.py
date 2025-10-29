@@ -1,6 +1,7 @@
 import grpc
-import camera_pb2
-import camera_pb2_grpc
+
+from apps.core.protos import camera_pb2
+from apps.core.protos import camera_pb2_grpc
 
 
 class CameraGrpcClient:
@@ -101,3 +102,6 @@ class CameraGrpcClient:
             return {"success": response.success, "message": response.message}
         except grpc.RpcError as e:
             return {"success": False, "message": str(e)}
+
+
+camera_grpc_client = CameraGrpcClient()

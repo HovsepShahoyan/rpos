@@ -3,9 +3,8 @@ import json
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from .grpc_client import CameraGrpcClient
+from apps.core.services.camera_grpc_client import camera_grpc_client
 
-grpc_client = CameraGrpcClient()
 
 
 @require_http_methods(["GET"])
@@ -16,7 +15,7 @@ def root(request):
 @require_http_methods(["GET"])
 def get_telemetry(request):
     print("[DEBUG] Django: get_telemetry called")
-    data = grpc_client.get_telemetry()
+    data = camera_grpc_client.get_telemetry()
     print(f"[DEBUG] Django: gRPC get_telemetry returned: {data}")
     return JsonResponse(data)
 
@@ -30,7 +29,7 @@ def move_ptz(request):
         elevation = body.get("elevation")
         if azimuth is None or elevation is None:
             return JsonResponse({"error": "Missing azimuth or elevation"}, status=400)
-        data = grpc_client.move_ptz(azimuth, elevation)
+        data = camera_grpc_client.move_ptz(azimuth, elevation)
         return JsonResponse(data)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
@@ -44,7 +43,7 @@ def set_zoom(request):
         level = body.get("level")
         if level is None:
             return JsonResponse({"error": "Missing level"}, status=400)
-        data = grpc_client.set_zoom(level)
+        data = camera_grpc_client.set_zoom(level)
         return JsonResponse(data)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
@@ -90,7 +89,7 @@ def set_speed(request):
         speed = body.get("speed")
         if speed is None:
             return JsonResponse({"error": "Missing speed"}, status=400)
-        data = grpc_client.set_speed(speed)
+        data = camera_grpc_client.set_speed(speed)
         return JsonResponse(data)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
@@ -105,7 +104,7 @@ def set_manual_gps(request):
         longitude = body.get("longitude")
         if latitude is None or longitude is None:
             return JsonResponse({"error": "Missing latitude or longitude"}, status=400)
-        data = grpc_client.set_manual_gps(latitude, longitude)
+        data = camera_grpc_client.set_manual_gps(latitude, longitude)
         return JsonResponse(data)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
@@ -127,7 +126,7 @@ def set_current_stream(request):
 
 @require_http_methods(["GET"])
 def get_current_zoom(request):
-    data = grpc_client.get_current_zoom()
+    data = camera_grpc_client.get_current_zoom()
     return JsonResponse(data)
 
 
@@ -138,7 +137,7 @@ def get_cross_positions(request):
         return JsonResponse({"error": "Missing zoom parameter"}, status=400)
     try:
         zoom = int(zoom)
-        data = grpc_client.get_cross_positions(zoom)
+        data = camera_grpc_client.get_cross_positions(zoom)
         return JsonResponse(data)
     except ValueError:
         return JsonResponse({"error": "Invalid zoom value"}, status=400)
@@ -146,7 +145,7 @@ def get_cross_positions(request):
 
 @require_http_methods(["GET"])
 def get_ptz_position(request):
-    data = grpc_client.get_ptz_position()
+    data = camera_grpc_client.get_ptz_position()
     return JsonResponse(data)
 
 
@@ -210,7 +209,7 @@ def send_control(request):
         value = body.get("value")
         if not all([prop, key, value is not None]):
             return JsonResponse({"error": "Missing parameters"}, status=400)
-        data = grpc_client.send_control(prop, key, value)
+        data = camera_grpc_client.send_control(prop, key, value)
         return JsonResponse(data)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
@@ -225,7 +224,7 @@ def set_ptz_direction(request):
         start = body.get("start")
         if direction is None or start is None:
             return JsonResponse({"error": "Missing parameters"}, status=400)
-        data = grpc_client.set_ptz_direction(direction, start)
+        data = camera_grpc_client.set_ptz_direction(direction, start)
         return JsonResponse(data)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
