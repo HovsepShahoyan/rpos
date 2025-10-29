@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .. import models
+from apps.core import models
 
 
 @admin.register(models.Camera)
