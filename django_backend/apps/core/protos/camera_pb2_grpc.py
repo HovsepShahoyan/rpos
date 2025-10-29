@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import camera_pb2 as camera__pb2
+import apps.core.protos.camera_pb2 as camera__pb2
 
 GRPC_GENERATED_VERSION = '1.70.0'
 GRPC_VERSION = grpc.__version__
