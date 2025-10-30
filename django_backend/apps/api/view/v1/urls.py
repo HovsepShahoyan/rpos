@@ -1,9 +1,13 @@
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 from .users.view import LoginAPIView, LogoutAPIView
-from .camear.views import CameraListView
+from .camear.views import CameraViewSet
+
+router = DefaultRouter()
+router.register(r'cameras', CameraViewSet)
 
 urlpatterns = [
     path("login/", LoginAPIView.as_view(), name="login"),
     path("logout/", LogoutAPIView.as_view(), name="logout"),
-    path("cameras/", CameraListView.as_view(), name="camera-list"),
+    path("", include(router.urls)),
 ]

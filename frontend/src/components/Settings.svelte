@@ -1,10 +1,23 @@
 <script>
 	import { showToast } from '../stores/ui.js';
-	import { setResolution, fetchCameras } from '../utils/api.js';
+	import { setResolution, fetchCameras, addCamera, updateCamera, deleteCamera } from '../utils/api.js';
 
 	let selectedResolution = '1920x1080';
 	let cameraName = '';
 	let cameras = [];
+
+	// New camera form variables
+	let newCameraName = '';
+	let newCameraIp = '';
+	let newCameraPort = 554;
+	let newCameraType = 1; // 1 for DAY, 2 for THERMAL
+
+	// Edit mode variables
+	let editingCamera = null;
+	let editCameraName = '';
+	let editCameraIp = '';
+	let editCameraPort = 554;
+	let editCameraType = 1;
 
 	async function handleResolutionChange() {
 		const [width, height] = selectedResolution.split('x').map(Number);
@@ -29,6 +42,75 @@
 			cameras = await fetchCameras();
 		} catch (error) {
 			showToast('Failed to load cameras', 'error');
+		}
+	}
+
+	async function addNewCamera() {
+		if (!newCameraName || !newCameraIp) {
+			showToast('Camera name and IP address are required', 'error');
+			return;
+		}
+		try {
+			await addCamera({
+				name: newCameraName,
+				ip_address: newCameraIp,
+				port: newCameraPort,
+				type: newCameraType
+			});
+			showToast('Camera added successfully', 'success');
+			// Reset form
+			newCameraName = '';
+			newCameraIp = '';
+			newCameraPort = 554;
+			newCameraType = 1;
+			// Reload cameras
+			await loadCameras();
+		} catch (error) {
+			showToast('Failed to add camera', 'error');
+		}
+	}
+
+	function startEditCamera(camera) {
+		editingCamera = camera;
+		editCameraName = camera.name;
+		editCameraIp = camera.ip_address;
+		editCameraPort = camera.port;
+		editCameraType = camera.type;
+	}
+
+	async function saveEditCamera() {
+		if (!editCameraName || !editCameraIp) {
+			showToast('Camera name and IP address are required', 'error');
+			return;
+		}
+		try {
+			await updateCamera(editingCamera.id, {
+				name: editCameraName,
+				ip_address: editCameraIp,
+				port: editCameraPort,
+				type: editCameraType
+			});
+			showToast('Camera updated successfully', 'success');
+			editingCamera = null;
+			await loadCameras();
+		} catch (error) {
+			showToast('Failed to update camera', 'error');
+		}
+	}
+
+	function cancelEdit() {
+		editingCamera = null;
+	}
+
+	async function removeCamera(cameraId) {
+		if (confirm('Are you sure you want to delete this camera?')) {
+			try {
+				await deleteCamera(cameraId);
+				showToast('Camera deleted successfully', 'success');
+				await loadCameras();
+			} catch (error) {
+				showToast('Failed to delete camera', 'error');
+			}
 		}
 	}
 
@@ -93,18 +175,92 @@
 
 <div class="card">
 	<div class="card-header">
+		<h3 class="card-title">Add New Camera</h3>
+	</div>
+
+	<div class="settings-table">
+		<div class="settings-row">
+			<div class="settings-label">Camera Name</div>
+			<input
+				type="text"
+				bind:value={newCameraName}
+				class="form-control"
+				placeholder="Enter camera name"
+			/>
+			<div></div>
+		</div>
+
+		<div class="settings-row">
+			<div class="settings-label">IP Address</div>
+			<input
+				type="text"
+				bind:value={newCameraIp}
+				class="form-control"
+				placeholder="192.168.1.100"
+			/>
+			<div></div>
+		</div>
+
+		<div class="settings-row">
+			<div class="settings-label">Port</div>
+			<input
+				type="number"
+				bind:value={newCameraPort}
+				class="form-control"
+				min="1"
+				max="65535"
+			/>
+			<div></div>
+		</div>
+
+		<div class="settings-row">
+			<div class="settings-label">Type</div>
+			<select
+				bind:value={newCameraType}
+				class="form-control"
+			>
+				<option value={1}>DAY</option>
+				<option value={2}>THERMAL</option>
+			</select>
+			<button class="btn btn-primary" on:click={addNewCamera}>Add Camera</button>
+		</div>
+	</div>
+</div>
+
+<div class="card">
+	<div class="card-header">
 		<h3 class="card-title">Camera List</h3>
 	</div>
 
 	<div class="camera-list">
 		{#each cameras as camera}
 			<div class="camera-item">
-				<div class="camera-info">
-					<strong>{camera.name}</strong> ({camera.type === 1 ? 'DAY' : 'THERMAL'})
-				</div>
-				<div class="camera-details">
-					IP: {camera.ip_address}:{camera.port}
-				</div>
+				{#if editingCamera && editingCamera.id === camera.id}
+					<div class="edit-form">
+						<div class="edit-row">
+							<input type="text" bind:value={editCameraName} class="form-control" placeholder="Name" />
+							<input type="text" bind:value={editCameraIp} class="form-control" placeholder="IP" />
+							<input type="number" bind:value={editCameraPort} class="form-control" min="1" max="65535" />
+							<select bind:value={editCameraType} class="form-control">
+								<option value={1}>DAY</option>
+								<option value={2}>THERMAL</option>
+							</select>
+							<button class="btn btn-primary" on:click={saveEditCamera}>Save</button>
+							<button class="btn btn-secondary" on:click={cancelEdit}>Cancel</button>
+						</div>
+					</div>
+				{:else}
+					<div class="camera-info">
+						<strong>{camera.name}</strong> ({camera.type === 1 ? 'DAY' : 'THERMAL'})
+					</div>
+					<div class="camera-details">
+						IP: {camera.ip_address}:{camera.port}
+					</div>
+					<div class="camera-actions">
+						<button class="btn btn-edit" on:click={() => startEditCamera(camera)}>Edit</button>
+						<button class="btn btn-delete" on:click={() => removeCamera(camera.id)}>Delete</button>
+					</div>
+				{/if}
 			</div>
 		{/each}
 		{#if cameras.length === 0}
@@ -289,6 +445,81 @@
 		transform: translateY(-1px);
 	}
 
+	.btn-edit {
+		padding: 0.5rem 1rem;
+		border: 2px solid #ffa500;
+		border-radius: 4px;
+		font-size: 0.9rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		min-width: 60px;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+		background: linear-gradient(135deg, #ffa500 0%, #ff8c00 100%);
+		color: #000000;
+		text-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+	}
+
+	.btn-edit:hover {
+		background: linear-gradient(135deg, #ff8c00 0%, #ffa500 100%);
+		border-color: #ff8c00;
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(255, 165, 0, 0.4);
+	}
+
+	.btn-delete {
+		padding: 0.5rem 1rem;
+		border: 2px solid #ff4444;
+		border-radius: 4px;
+		font-size: 0.9rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		min-width: 60px;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+		background: linear-gradient(135deg, #ff4444 0%, #cc0000 100%);
+		color: #ffffff;
+		text-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+	}
+
+	.btn-delete:hover {
+		background: linear-gradient(135deg, #cc0000 0%, #ff4444 100%);
+		border-color: #cc0000;
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(255, 68, 68, 0.4);
+	}
+
+	.btn-secondary {
+		padding: 0.5rem 1rem;
+		border: 2px solid #666666;
+		border-radius: 4px;
+		font-size: 0.9rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		min-width: 60px;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+		background: linear-gradient(135deg, #666666 0%, #888888 100%);
+		color: #ffffff;
+		text-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+	}
+
+	.btn-secondary:hover {
+		background: linear-gradient(135deg, #888888 0%, #666666 100%);
+		border-color: #888888;
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(136, 136, 136, 0.4);
+	}
+
 
 
 	output {
@@ -358,6 +589,24 @@
 		align-items: center;
 		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+		flex-wrap: wrap;
+		gap: 1rem;
+	}
+
+	.edit-form {
+		width: 100%;
+	}
+
+	.edit-row {
+		display: flex;
+		gap: 1rem;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+
+	.camera-actions {
+		display: flex;
+		gap: 0.5rem;
 	}
 
 	.camera-item:hover {
