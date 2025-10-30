@@ -1,9 +1,10 @@
 <script>
 	import { showToast } from '../stores/ui.js';
-	import { setResolution } from '../utils/api.js';
+	import { setResolution, fetchCameras } from '../utils/api.js';
 
 	let selectedResolution = '1920x1080';
 	let cameraName = '';
+	let cameras = [];
 
 	async function handleResolutionChange() {
 		const [width, height] = selectedResolution.split('x').map(Number);
@@ -22,6 +23,17 @@
 		}
 		showToast('Camera name will be updated after restart', 'info');
 	}
+
+	async function loadCameras() {
+		try {
+			cameras = await fetchCameras();
+		} catch (error) {
+			showToast('Failed to load cameras', 'error');
+		}
+	}
+
+	// Load cameras on component mount
+	loadCameras();
 </script>
 
 <div class="page-header">
@@ -74,6 +86,30 @@
 			<input type="range" class="form-control" min="1000" max="10000" value="5000" step="500" />
 			<output>5000 kbps</output>
 		</div>
+	</div>
+</div>
+
+
+
+<div class="card">
+	<div class="card-header">
+		<h3 class="card-title">Camera List</h3>
+	</div>
+
+	<div class="camera-list">
+		{#each cameras as camera}
+			<div class="camera-item">
+				<div class="camera-info">
+					<strong>{camera.name}</strong> ({camera.type === 1 ? 'DAY' : 'THERMAL'})
+				</div>
+				<div class="camera-details">
+					IP: {camera.ip_address}:{camera.port}
+				</div>
+			</div>
+		{/each}
+		{#if cameras.length === 0}
+			<p class="no-cameras">No cameras configured.</p>
+		{/if}
 	</div>
 </div>
 
@@ -253,6 +289,8 @@
 		transform: translateY(-1px);
 	}
 
+
+
 	output {
 		background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
 		color: #00ff41;
@@ -304,6 +342,56 @@
 		border: 2px solid #000000;
 	}
 
+	.camera-list {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.camera-item {
+		padding: 1rem;
+		background: linear-gradient(135deg, #2d2d2d 0%, #3d3d3d 100%);
+		border: 2px solid #555555;
+		border-radius: 8px;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+	}
+
+	.camera-item:hover {
+		border-color: #00ff41;
+		transform: translateY(-2px);
+		box-shadow: 0 8px 24px rgba(0, 255, 65, 0.2);
+	}
+
+	.camera-info {
+		color: #00ff41;
+		font-weight: 700;
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		text-shadow: 0 0 5px #00ff41;
+	}
+
+	.camera-details {
+		color: #cccccc;
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.no-cameras {
+		color: #cccccc;
+		font-style: italic;
+		text-align: center;
+		padding: 2rem;
+		font-family: 'Courier New', monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
 	/* Responsive Design */
 	@media (max-width: 1024px) {
 		.settings-row {
@@ -314,6 +402,12 @@
 
 		.settings-label {
 			margin-bottom: 0.5rem;
+		}
+
+		.camera-item {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.5rem;
 		}
 	}
 
@@ -338,6 +432,10 @@
 		.btn {
 			padding: 0.875rem 2rem;
 			font-size: 1rem;
+		}
+
+		.camera-item {
+			padding: 0.75rem;
 		}
 	}
 </style>

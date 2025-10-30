@@ -140,3 +140,12 @@ export async function setPTZDirection(direction, start) {
 	if (!response.ok) throw new Error('Failed to set PTZ direction');
 	return response.json();
 }
+
+export async function fetchCameras() {
+	console.log('[DEBUG] Frontend: Calling fetchCameras to Django');
+	const response = await fetch(`${API_BASE}/api/v1/cameras/`);
+	if (!response.ok) throw new Error('Failed to fetch cameras');
+	const data = await response.json();
+	console.log('[DEBUG] Frontend: Received cameras data:', data);
+	return data;
+}
