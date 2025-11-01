@@ -4,7 +4,7 @@
 	import { currentStream, currentSpeed } from '../stores/camera.js';
 	import { angles, distance } from '../stores/telemetry.js';
 	import { showToast } from '../stores/ui.js';
-	import { setSpeed, setCurrentStream, sendControlValue, setPTZDirection } from '../utils/api.js';
+	import { setSpeed, setCurrentStream, sendControlValue, setPTZDirection, setZoomLevel } from '../utils/api.js';
 	import {
 		GO2RTC_BASE,
 		BASE_FOV_HORIZONTAL,
@@ -448,7 +448,7 @@
 	}
 
 	// Zoom / image / thermal wrappers (wire UI buttons)
-	function setDayZoom(dir) {
+	async function setDayZoom(dir) {
 		const dayZoomValues = [1, 5, 15, 30, 60, 68];
 		let currentDayZoomIndex = dayZoomValues.indexOf(parseInt(document.getElementById('dayZoomValue').textContent.replace('x', '')));
 		if (currentDayZoomIndex === -1) currentDayZoomIndex = 0;
@@ -458,8 +458,12 @@
 			currentDayZoomIndex = Math.max(0, currentDayZoomIndex - 1);
 		}
 		const value = dayZoomValues[currentDayZoomIndex];
-		sendControlValue('UserControls', 'day_zoom', value);
-		setZoomLevel(currentDayZoomIndex + 1).catch(console.error);
+		try {
+			await sendControlValue('UserControls', 'day_zoom', value);
+			await setZoomLevel(currentDayZoomIndex + 1);
+		} catch (error) {
+			console.error('Failed to set day zoom:', error);
+		}
 		document.getElementById('dayZoomValue').textContent = value + 'x';
 		showToast('Day Zoom set to ' + value + 'x', 'success');
 	}

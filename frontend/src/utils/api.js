@@ -2,7 +2,7 @@ const API_BASE = 'http://192.168.0.104:8000';
 
 export async function fetchTelemetry() {
 	console.log('[DEBUG] Frontend: Calling fetchTelemetry to Django');
-	const response = await fetch(`${API_BASE}/api/telemetry/`);
+	const response = await fetch(`${API_BASE}/api/system/telemetry/`);
 	if (!response.ok) throw new Error('Failed to fetch telemetry');
 	const data = await response.json();
 	console.log('[DEBUG] Frontend: Received telemetry data:', data);
@@ -11,7 +11,7 @@ export async function fetchTelemetry() {
 
 export async function movePTZ(az, el) {
 	console.log('[DEBUG] Frontend: Calling movePTZ to Django with az:', az, 'el:', el);
-	const response = await fetch(`${API_BASE}/api/move`, {
+	const response = await fetch(`${API_BASE}/api/system/move_ptz/`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ azimuth: az, elevation: el })
@@ -23,7 +23,7 @@ export async function movePTZ(az, el) {
 }
 
 export async function setSpeed(speed) {
-	const response = await fetch(`${API_BASE}/api/setSpeed`, {
+	const response = await fetch(`${API_BASE}/api/system/set_speed/`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ speed })
@@ -33,7 +33,7 @@ export async function setSpeed(speed) {
 }
 
 export async function setCurrentStream(stream) {
-	const response = await fetch(`${API_BASE}/api/setCurrentStream`, {
+	const response = await fetch(`${API_BASE}/api/system/set_current_stream/`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ stream })
@@ -44,7 +44,7 @@ export async function setCurrentStream(stream) {
 
 export async function getCurrentZoom() {
 	console.log('[DEBUG] Frontend: Calling getCurrentZoom to Django');
-	const response = await fetch(`${API_BASE}/api/currentZoom/`);
+	const response = await fetch(`${API_BASE}/api/system/current_zoom/`);
 	if (!response.ok) throw new Error('Failed to get zoom');
 	const data = await response.json();
 	console.log('[DEBUG] Frontend: Received current zoom:', data);
@@ -53,7 +53,7 @@ export async function getCurrentZoom() {
 
 export async function setZoomLevel(level) {
 	console.log('[DEBUG] Frontend: Calling setZoomLevel to Django with level:', level);
-	const response = await fetch(`${API_BASE}/api/zoom`, {
+	const response = await fetch(`${API_BASE}/api/system/set_zoom/`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ level })
@@ -66,7 +66,7 @@ export async function setZoomLevel(level) {
 
 export async function getCrossPositions(zoom) {
 	console.log('[DEBUG] Frontend: Calling getCrossPositions to Django with zoom:', zoom);
-	const response = await fetch(`${API_BASE}/api/crossPositions/?zoom=${zoom}`);
+	const response = await fetch(`${API_BASE}/api/system/cross_positions/?zoom=${zoom}`);
 	if (!response.ok) throw new Error('Failed to get cross positions');
 	const data = await response.json();
 	console.log('[DEBUG] Frontend: Received cross positions:', data);
@@ -75,7 +75,7 @@ export async function getCrossPositions(zoom) {
 
 export async function getPTZPosition() {
 	console.log('[DEBUG] Frontend: Calling getPTZPosition to Django');
-	const response = await fetch(`${API_BASE}/api/ptzPosition/`);
+	const response = await fetch(`${API_BASE}/api/system/ptz_position/`);
 	if (!response.ok) throw new Error('Failed to get PTZ position');
 	const data = await response.json();
 	console.log('[DEBUG] Frontend: Received PTZ position:', data);
@@ -83,7 +83,7 @@ export async function getPTZPosition() {
 }
 
 export async function setResolution(width, height) {
-	const response = await fetch(`${API_BASE}/api/setResolution`, {
+	const response = await fetch(`${API_BASE}/api/system/set_resolution/`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ width, height })
@@ -93,36 +93,35 @@ export async function setResolution(width, height) {
 }
 
 export async function fetchAngles() {
-	const response = await fetch(`${API_BASE}/api/angles`);
+	const response = await fetch(`${API_BASE}/api/system/angles/`);
 	if (!response.ok) throw new Error('Failed to fetch angles');
 	return response.json();
 }
 
 export async function fetchDistance() {
-	const response = await fetch(`${API_BASE}/api/distance`);
+	const response = await fetch(`${API_BASE}/api/system/distance/`);
 	if (!response.ok) throw new Error('Failed to fetch distance');
 	return response.json();
 }
 
 export async function fetchLoginAttempts() {
-	const response = await fetch(`${API_BASE}/api/loginAttempts`);
+	const response = await fetch(`${API_BASE}/api/system/login_attempts/`);
 	if (!response.ok) throw new Error('Failed to fetch login attempts');
 	return response.json();
 }
 
 export async function scheduleReboot(time, password, scriptPath, runAs) {
-	const body = `time=${encodeURIComponent(time)}&password=${encodeURIComponent(password)}&scriptPath=${encodeURIComponent(scriptPath)}&runAs=${encodeURIComponent(runAs)}`;
-	const response = await fetch(`${API_BASE}/api/scheduleReboot`, {
+	const response = await fetch(`${API_BASE}/api/system/schedule_reboot/`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-		body
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ time, password, scriptPath, runAs })
 	});
 	if (!response.ok) throw new Error('Failed to schedule reboot');
 	return response.json();
 }
 
 export async function sendControlValue(prop, key, value) {
-	const response = await fetch(`${API_BASE}/api/sendControl`, {
+	const response = await fetch(`${API_BASE}/api/system/send_control/`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ prop, key, value })
@@ -132,7 +131,7 @@ export async function sendControlValue(prop, key, value) {
 }
 
 export async function setPTZDirection(direction, start) {
-	const response = await fetch(`${API_BASE}/api/setPTZDirection`, {
+	const response = await fetch(`${API_BASE}/api/system/set_ptz_direction/`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ direction, start })
@@ -152,7 +151,7 @@ export async function fetchCameras() {
 
 export async function addCamera(cameraData) {
 	console.log('[DEBUG] Frontend: Calling addCamera to Django with data:', cameraData);
-	const response = await fetch(`${API_BASE}/api/v1/cameras/`, {
+	const response = await fetch(`${API_BASE}/api/v1/cameras/create/`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(cameraData)
