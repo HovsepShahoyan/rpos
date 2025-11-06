@@ -1,14 +1,14 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny
 from django.http import HttpResponse
 import os
 from apps.core.services.camera_grpc_client import camera_grpc_client
 
 
 class SystemViewSet(viewsets.ViewSet):
-    # Remove global permission_classes - will set per action
+    permission_classes = [AllowAny]
 
     @action(detail=False, methods=['get'])
     def root(self, request):
@@ -30,7 +30,7 @@ class SystemViewSet(viewsets.ViewSet):
         data = camera_grpc_client.move_ptz(azimuth, elevation)
         return Response(data)
 
-    @action(detail=False, methods=['post'], permission_classes=[])
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def set_zoom(self, request):
         level = request.data.get("level")
         if level is None:
@@ -83,14 +83,14 @@ class SystemViewSet(viewsets.ViewSet):
         data = camera_grpc_client.set_manual_gps(latitude, longitude)
         return Response(data)
 
-    @action(detail=False, methods=['post'], permission_classes=[])
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def set_current_stream(self, request):
         stream = request.data.get("stream")
         if stream is None:
             return Response({"error": "Missing stream"}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"success": True, "message": "Stream set"})
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def current_zoom(self, request):
         data = camera_grpc_client.get_current_zoom()
         return Response(data)
@@ -107,7 +107,7 @@ class SystemViewSet(viewsets.ViewSet):
         except ValueError:
             return Response({"error": "Invalid zoom value"}, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
     def ptz_position(self, request):
         data = camera_grpc_client.get_ptz_position()
         return Response(data)
@@ -142,7 +142,7 @@ class SystemViewSet(viewsets.ViewSet):
             return Response({"error": "Missing required parameters"}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"success": True, "message": "Reboot scheduled"})
 
-    @action(detail=False, methods=['post'], permission_classes=[])
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def send_control(self, request):
         prop = request.data.get("prop")
         key = request.data.get("key")
@@ -152,7 +152,7 @@ class SystemViewSet(viewsets.ViewSet):
         data = camera_grpc_client.send_control(prop, key, value)
         return Response(data)
 
-    @action(detail=False, methods=['post'], permission_classes=[])
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def set_ptz_direction(self, request):
         direction = request.data.get("direction")
         start = request.data.get("start")

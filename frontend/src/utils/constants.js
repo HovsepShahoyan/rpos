@@ -32,6 +32,9 @@ export const IR_CROSSHAIR_POSITIONS = {
 	8: [960, 557]
 };
 
+// API configuration
+export const API_BASE = 'http://192.168.0.104:8000';
+
 // Go2RTC configuration
 export const GO2RTC_BASE = 'http://192.168.0.104:1984';
 

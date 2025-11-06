@@ -4,7 +4,8 @@
 	import { currentStream, currentSpeed } from '../stores/camera.js';
 	import { angles, distance } from '../stores/telemetry.js';
 	import { showToast } from '../stores/ui.js';
-	import { setSpeed, setCurrentStream, sendControlValue, setPTZDirection, setZoomLevel } from '../utils/api.js';
+	import { setSpeed, setCurrentStream, sendControlValue, setPTZDirection, setZoomLevel, movePTZ, getCurrentZoom, getPTZPosition } from '../utils/api.js';
+	import { API_BASE } from '../utils/constants.js';
 	import {
 		GO2RTC_BASE,
 		BASE_FOV_HORIZONTAL,
@@ -80,17 +81,17 @@
 		setPTZDirection(control, value === 'true').catch(err => console.error('PTZ control error:', err));
 	}
 
-	function movePTZ(dir) {
+	function movePTZDirection(dir) {
 		// convenience wrapper for directional buttons
 		switch (dir) {
 			case 'up': handlePTZButton('ptz_up', 'true'); setTimeout(()=>handlePTZButton('ptz_up','false'), 150); break;
 			case 'down': handlePTZButton('ptz_down', 'true'); setTimeout(()=>handlePTZButton('ptz_down','false'), 150); break;
 			case 'left': handlePTZButton('ptz_left', 'true'); setTimeout(()=>handlePTZButton('ptz_left','false'), 150); break;
 			case 'right': handlePTZButton('ptz_right', 'true'); setTimeout(()=>handlePTZButton('ptz_right','false'), 150); break;
-			case 'up-left': movePTZ('up'); movePTZ('left'); break;
-			case 'up-right': movePTZ('up'); movePTZ('right'); break;
-			case 'down-left': movePTZ('down'); movePTZ('left'); break;
-			case 'down-right': movePTZ('down'); movePTZ('right'); break;
+			case 'up-left': movePTZDirection('up'); movePTZDirection('left'); break;
+			case 'up-right': movePTZDirection('up'); movePTZDirection('right'); break;
+			case 'down-left': movePTZDirection('down'); movePTZDirection('left'); break;
+			case 'down-right': movePTZDirection('down'); movePTZDirection('right'); break;
 		}
 	}
 
@@ -128,11 +129,8 @@
 		// Get current zoom
 		let currentZoomValue = 1;
 		try {
-			const zoomResponse = await fetch('/api/currentZoom');
-			if (zoomResponse.ok) {
-				const zoomData = await zoomResponse.json();
-				currentZoomValue = zoomData.zoom || currentZoomValue;
-			}
+			const zoomData = await getCurrentZoom();
+			currentZoomValue = zoomData.zoom || currentZoomValue;
 		} catch (error) {
 			console.error('Error getting current zoom:', error);
 		}
@@ -143,13 +141,11 @@
 		let yCrossPos = currentPos.y * currentVideoHeight;
 
 		try {
-			const positionResponse = await fetch('/api/ptzPosition');
-			if (!positionResponse.ok) throw new Error('ptzPosition not ok ' + positionResponse.status);
-			const positionData = await positionResponse.json();
+			const positionData = await getPTZPosition();
 			const currentHorizontal = positionData.az;
 			const currentVertical = positionData.el;
 
-			doPTZMove(percentX, percentY, currentZoomValue, currentHorizontal, currentVertical, xCrossPos, yCrossPos, currentCameraType);
+			await doPTZMove(percentX, percentY, currentZoomValue, currentHorizontal, currentVertical, xCrossPos, yCrossPos, currentCameraType);
 		} catch (error) {
 			console.error('Error getting current PTZ position:', error);
 		}
@@ -241,7 +237,7 @@
 		return [newHorizontal, newVertical];
 	}
 
-	function doPTZMove(clickX, clickY, zoom, currentHorizontal, currentVertical, xCrossPos, yCrossPos, cameraType) {
+	async function doPTZMove(clickX, clickY, zoom, currentHorizontal, currentVertical, xCrossPos, yCrossPos, cameraType) {
 		let result = calculateNewPositionEncoderCrosshair(
 			clickX, clickY, currentVideoWidth, currentVideoHeight, currentHorizontal, currentVertical, zoom, xCrossPos, yCrossPos, cameraType
 		);
@@ -250,11 +246,14 @@
 		let newVertical = result[1];
 
 		// Send PTZ command
-		movePTZ(newHorizontal, newVertical).then(function(response) {
+		try {
+			await movePTZ(newHorizontal, newVertical);
 			console.log('PTZ move sent successfully');
-		}).catch(function(error) {
+			showToast('PTZ moved to clicked position', 'success');
+		} catch (error) {
 			console.error('Error sending PTZ move command:', error);
-		});
+			showToast('Failed to move PTZ', 'error');
+		}
 
 		return [newHorizontal, newVertical];
 	}

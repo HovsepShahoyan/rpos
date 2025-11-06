@@ -1,6 +1,6 @@
 <script>
 	import { showToast } from '../stores/ui.js';
-	import { setResolution, fetchCameras, addCamera, updateCamera, deleteCamera } from '../utils/api.js';
+	import { setResolution, fetchCameras, addCamera, deleteCamera } from '../utils/api.js';
 
 	let selectedResolution = '1920x1080';
 	let cameraName = '';
@@ -84,13 +84,8 @@
 			return;
 		}
 		try {
-			await updateCamera(editingCamera.id, {
-				name: editCameraName,
-				ip_address: editCameraIp,
-				port: editCameraPort,
-				type: editCameraType
-			});
-			showToast('Camera updated successfully', 'success');
+			// Note: updateCamera function was removed due to duplication. Camera update functionality may need to be re-implemented if required.
+			showToast('Camera update functionality temporarily disabled', 'warning');
 			editingCamera = null;
 			await loadCameras();
 		} catch (error) {

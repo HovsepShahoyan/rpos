@@ -151,7 +151,7 @@ export async function fetchCameras() {
 
 export async function addCamera(cameraData) {
 	console.log('[DEBUG] Frontend: Calling addCamera to Django with data:', cameraData);
-	const response = await fetch(`${API_BASE}/api/v1/cameras/create/`, {
+	const response = await fetch(`${API_BASE}/api/v1/cameras/`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(cameraData)
@@ -159,19 +159,6 @@ export async function addCamera(cameraData) {
 	if (!response.ok) throw new Error('Failed to add camera');
 	const data = await response.json();
 	console.log('[DEBUG] Frontend: Received addCamera response:', data);
-	return data;
-}
-
-export async function updateCamera(id, cameraData) {
-	console.log('[DEBUG] Frontend: Calling updateCamera to Django with id:', id, 'data:', cameraData);
-	const response = await fetch(`${API_BASE}/api/v1/cameras/${id}/`, {
-		method: 'PUT',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(cameraData)
-	});
-	if (!response.ok) throw new Error('Failed to update camera');
-	const data = await response.json();
-	console.log('[DEBUG] Frontend: Received updateCamera response:', data);
 	return data;
 }
 
