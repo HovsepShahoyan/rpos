@@ -7,5 +7,9 @@ from apps.core import models
 
 @register(models.Audit)
 class AuditAdmin(admin.ModelAdmin):
-    pass
+    list_display = ('created', 'action', 'user', 'ip_address')
+    list_filter = ('action', 'created', 'user')
+    search_fields = ('user__username', 'ip_address')
+    readonly_fields = ('created', 'action', 'user', 'ip_address')
+    ordering = ('-created',)
 

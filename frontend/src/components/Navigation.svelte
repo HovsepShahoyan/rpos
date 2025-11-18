@@ -1,5 +1,6 @@
 <script>
 	import { currentPage } from '../stores/ui.js';
+	import { logout, currentUser } from '../stores/auth.js';
 
 	const pages = [
 		{ id: 'fastlive', label: 'Fast Live' },
@@ -15,6 +16,10 @@
 	function navigateTo(pageId) {
 		currentPage.set(pageId);
 	}
+
+	function handleLogout() {
+		logout();
+	}
 </script>
 
 <nav class="navbar">
@@ -28,8 +33,8 @@
 		<ul class="nav-menu">
 			{#each pages as page}
 				<li>
-					<button 
-						class="nav-link" 
+					<button
+						class="nav-link"
 						class:active={$currentPage === page.id}
 						on:click={() => navigateTo(page.id)}
 					>
@@ -37,6 +42,16 @@
 					</button>
 				</li>
 			{/each}
+			<li>
+				<span class="user-info">
+					<span class="user-name">{$currentUser?.username || 'User'}</span>
+					<button class="logout-btn" on:click={handleLogout} title="Logout">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+							<path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.59L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>
+						</svg>
+					</button>
+				</span>
+			</li>
 			<li>
 				<span class="status-indicator status-online"></span>
 				<span>Online</span>
@@ -101,6 +116,13 @@
 		text-transform: uppercase;
 		letter-spacing: 1px;
 		text-shadow: 0 0 10px #008800;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.nav-brand:hover {
+		transform: scale(1.02);
+		text-shadow: 0 0 15px #008800;
 	}
 
 	.nav-brand svg {
@@ -114,6 +136,8 @@
 		align-items: center;
 		margin: 0;
 		padding: 0;
+		flex: 1;
+		justify-content: flex-end;
 	}
 
 	.nav-link {
@@ -199,6 +223,47 @@
 			box-shadow: 0 0 0 0 #00ff41;
 			opacity: 1;
 		}
+	}
+
+	.user-info {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		color: #cccccc;
+		font-family: 'Courier New', monospace;
+		font-size: 0.9rem;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.user-name {
+		color: #008800;
+		font-weight: 600;
+	}
+
+	.logout-btn {
+		background: linear-gradient(135deg, #2d2d2d 0%, #3d3d3d 100%);
+		border: 2px solid #555555;
+		border-radius: 4px;
+		padding: 0.5rem;
+		color: #cccccc;
+		cursor: pointer;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.logout-btn:hover {
+		color: #ff6b6b;
+		border-color: #ff6b6b;
+		background: linear-gradient(135deg, #3d3d3d 0%, #4d4d4d 100%);
+		transform: scale(1.05);
+		box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
+	}
+
+	.logout-btn svg {
+		filter: drop-shadow(0 0 3px currentColor);
 	}
 
 	@keyframes tactical-scan {

@@ -1,8 +1,47 @@
+import { accessToken, refreshAccessToken } from '../stores/auth.js';
+
 const API_BASE = 'http://192.168.0.104:8000';
+
+async function getAuthHeaders() {
+	let token = localStorage.getItem('accessToken');
+	if (!token) return {};
+
+	// Check if token is expired (simple check, you might want to decode JWT)
+	// For now, we'll try the request and refresh if it fails with 401
+	return { 'Authorization': `Bearer ${token}` };
+}
+
+async function makeAuthenticatedRequest(url, options = {}) {
+	const headers = await getAuthHeaders();
+	const response = await fetch(url, {
+		...options,
+		headers: {
+			...headers,
+			...options.headers
+		}
+	});
+
+	if (response.status === 401) {
+		// Try to refresh token
+		const refreshed = await refreshAccessToken();
+		if (refreshed) {
+			const newHeaders = await getAuthHeaders();
+			return fetch(url, {
+				...options,
+				headers: {
+					...newHeaders,
+					...options.headers
+				}
+			});
+		}
+	}
+
+	return response;
+}
 
 export async function fetchTelemetry() {
 	console.log('[DEBUG] Frontend: Calling fetchTelemetry to Django');
-	const response = await fetch(`${API_BASE}/api/system/telemetry/`);
+	const response = await makeAuthenticatedRequest(`${API_BASE}/api/system/telemetry/`);
 	if (!response.ok) throw new Error('Failed to fetch telemetry');
 	const data = await response.json();
 	console.log('[DEBUG] Frontend: Received telemetry data:', data);
@@ -11,7 +50,7 @@ export async function fetchTelemetry() {
 
 export async function movePTZ(az, el) {
 	console.log('[DEBUG] Frontend: Calling movePTZ to Django with az:', az, 'el:', el);
-	const response = await fetch(`${API_BASE}/api/system/move_ptz/`, {
+	const response = await makeAuthenticatedRequest(`${API_BASE}/api/system/move_ptz/`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ azimuth: az, elevation: el })

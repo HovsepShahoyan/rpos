@@ -1,6 +1,7 @@
 <script>
 	import { onMount, onDestroy } from 'svelte';
 	import Navigation from './components/Navigation.svelte';
+	import Login from './components/Login.svelte';
 	import FastLive from './components/FastLive.svelte';
 	import Fullscreen from './components/Fullscreen.svelte';
 	import Map from './components/Map.svelte';
@@ -10,6 +11,7 @@
 	import Logs from './components/Logs.svelte';
 	import Reboot from './components/Reboot.svelte';
 	import { currentPage, toasts } from './stores/ui.js';
+	import { isAuthenticated, initAuth } from './stores/auth.js';
 	import {
 		startTelemetryPolling,
 		stopTelemetryPolling,
@@ -20,10 +22,15 @@
 	} from './stores/telemetry.js';
 
 	onMount(() => {
-		// Start polling for telemetry data
-		startTelemetryPolling();
-		startAnglesPolling();
-		startDistancePolling();
+		// Initialize authentication state
+		initAuth();
+
+		// Start polling for telemetry data only if authenticated
+		if ($isAuthenticated) {
+			startTelemetryPolling();
+			startAnglesPolling();
+			startDistancePolling();
+		}
 	});
 
 	onDestroy(() => {
@@ -34,27 +41,31 @@
 	});
 </script>
 
-<Navigation />
+{#if !$isAuthenticated}
+	<Login />
+{:else}
+	<Navigation />
 
-<main class="main-container {$currentPage === 'fullscreen' ? 'fullscreen-page' : ''}">
-	{#if $currentPage === 'fastlive'}
-		<FastLive />
-	{:else if $currentPage === 'fullscreen'}
-		<Fullscreen />
-	{:else if $currentPage === 'map'}
-		<Map />
-	{:else if $currentPage === 'telemetry'}
-		<Telemetry />
-	{:else if $currentPage === 'settings'}
-		<Settings />
-	{:else if $currentPage === 'controls'}
-		<Controls />
-	{:else if $currentPage === 'logs'}
-		<Logs />
-	{:else if $currentPage === 'reboot'}
-		<Reboot />
-	{/if}
-</main>
+	<main class="main-container {$currentPage === 'fullscreen' ? 'fullscreen-page' : ''}">
+		{#if $currentPage === 'fastlive'}
+			<FastLive />
+		{:else if $currentPage === 'fullscreen'}
+			<Fullscreen />
+		{:else if $currentPage === 'map'}
+			<Map />
+		{:else if $currentPage === 'telemetry'}
+			<Telemetry />
+		{:else if $currentPage === 'settings'}
+			<Settings />
+		{:else if $currentPage === 'controls'}
+			<Controls />
+		{:else if $currentPage === 'logs'}
+			<Logs />
+		{:else if $currentPage === 'reboot'}
+			<Reboot />
+		{/if}
+	</main>
+{/if}
 
 <!-- Toast notifications -->
 <div class="toast-container">
