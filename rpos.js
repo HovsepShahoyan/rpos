@@ -243,10 +243,8 @@ function getTelemetry(call, callback) {
 function movePTZ(call, callback) {
   try {
     const { azimuth, elevation } = call.request;
-    // Convert degrees to encoder units (assuming azimuth and elevation are in degrees)
-    cmdClient.setWithDegEncMovementAz(azimuth);
-    cmdClient.setWithDegStepMovementEl(elevation);
-
+    console.log('[DEBUG] gRPC server: movePTZ called with az:', azimuth, 'el:', elevation);
+    cmdClient.setTargetPosition(azimuth, elevation, 1);
     callback(null, { success: true, message: 'PTZ moved successfully' });
   } catch (error) {
     console.error('Error in movePTZ:', error);
@@ -280,7 +278,7 @@ function setZoom(call, callback) {
 
 function getCurrentZoom(call, callback) {
   try {
-    const zoom = cmdClient.getCurrentZoom();
+    const zoom = cmdClient.getCurrentZoom() || 1;
     callback(null, { zoom: parseInt(zoom) });
   } catch (error) {
     console.error('Error in getCurrentZoom:', error);

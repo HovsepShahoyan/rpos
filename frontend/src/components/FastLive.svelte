@@ -30,13 +30,14 @@
 	let crosshairElements = {};
 	let pollingActive = true;
 	let currentActiveStream = 1;
+		let ptzMoving = false;
 
-	$: {
-		// Update iframe URL when stream changes
-		const streamNum = $currentStream;
-		const srcName = `stream${streamNum}`;
-		iframeUrl = `${GO2RTC_BASE}/webrtc.html?src=${encodeURIComponent(srcName)}`;
-	}
+		$: {
+			// Update iframe URL when stream changes
+			const streamNum = $currentStream;
+			const srcName = `stream${streamNum}`;
+			iframeUrl = `${GO2RTC_BASE}/webrtc.html?src=${encodeURIComponent(srcName)}`;
+		}
 
 	// Switch stream: keep mapping consistent with original JS
 	// stream 1 => IR (cameraType=2) width 1350, stream 2 => Day (cameraType=1) width 1920
@@ -105,6 +106,9 @@
 		event.preventDefault();
 		event.stopPropagation();
 
+		if (ptzMoving) return false;
+		ptzMoving = true;
+
 		const videoElement = event.target;
 		const rect = videoElement.getBoundingClientRect();
 		const clickX = event.clientX - rect.left;
@@ -135,10 +139,23 @@
 			console.error('Error getting current zoom:', error);
 		}
 
-		// Get current crosshair pixel positions
-		const currentPos = streamPositions[$currentStream];
-		let xCrossPos = currentPos.x * currentVideoWidth;
-		let yCrossPos = currentPos.y * currentVideoHeight;
+		// Get current crosshair encoder positions from backend
+		let xCrossPos = 960; // default fallback
+		let yCrossPos = 520;
+
+		if (currentCameraType === 1) { // Day camera - get dynamic encoder positions
+			try {
+				const crossResponse = await fetch('/api/crossPositions?zoom=' + currentZoomValue);
+				const crossData = await crossResponse.json();
+				xCrossPos = crossData.x;
+				yCrossPos = crossData.y;
+			} catch (error) {
+				console.error('Error getting cross positions:', error);
+			}
+		} else { // IR camera - use fixed center
+			xCrossPos = 960;
+			yCrossPos = 520;
+		}
 
 		try {
 			const positionData = await getPTZPosition();
@@ -150,6 +167,7 @@
 			console.error('Error getting current PTZ position:', error);
 		}
 
+		ptzMoving = false;
 		return false;
 	}
 
@@ -228,11 +246,10 @@
 		let angleOffsetH = (relX + xCrossCorrection / screenWidth) * fovHorizontal * correctionCoefficientH;
 		let angleOffsetV = (relY + yCrossCorrection / screenHeight) * fovVertical * correctionCoefficientV;
 
-		let newHorizontal = currentHorizontal + Math.floor(angleOffsetH * (AZIM_RIGHT / 360));
-		let newVertical = currentVertical + Math.floor(angleOffsetV * (ELEV_UP / 360)); // use ELEV_UP vertically
-
-		newHorizontal = Math.max(0, Math.min(AZIM_RIGHT, newHorizontal));
-		newVertical = Math.max(0, Math.min(ELEV_UP, newVertical));
+let newHorizontal = currentHorizontal + Math.floor(angleOffsetH * (AZIM_RIGHT / 360));
+let newVertical = currentVertical + Math.floor(angleOffsetV * (ELEV_UP / 360)); // use ELEV_UP vertically
+newHorizontal = Math.max(AZIM_LEFT, Math.min(AZIM_RIGHT, newHorizontal));
+newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 
 		return [newHorizontal, newVertical];
 	}
