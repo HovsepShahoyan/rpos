@@ -1,105 +1,139 @@
-import { writable } from 'svelte/store';
-import { showToast } from './ui.js';
+import { writable, derived } from 'svelte/store';
 
-export const isAuthenticated = writable(false);
-export const accessToken = writable(null);
-export const refreshToken = writable(null);
+export const auth = writable({
+  isAuthenticated: false,
+  user: null,
+  accessToken: null,
+  refreshToken: null
+});
+
 export const currentUser = writable(null);
 
-const API_BASE = 'http://192.168.0.104:8000';
+// Derived stores for easier access
+export const accessToken = derived(auth, $auth => $auth.accessToken);
+export const refreshAccessToken = derived(auth, $auth => $auth.refreshToken);
+export const isAuthenticated = derived(auth, $auth => $auth.isAuthenticated);
 
 export async function login(username, password) {
-	try {
-		const response = await fetch(`${API_BASE}/api/v1/login/`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ username, password })
-		});
+  try {
+    const response = await fetch('http://192.168.0.104:8000/api/v1/login/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ username, password }),
+    });
 
-		if (response.ok) {
-			const data = await response.json();
-			accessToken.set(data.access);
-			refreshToken.set(data.refresh);
-			isAuthenticated.set(true);
-			currentUser.set({ username });
-			localStorage.setItem('accessToken', data.access);
-			localStorage.setItem('refreshToken', data.refresh);
-			showToast('Login successful', 'success');
-			return true;
-		} else {
-			const error = await response.json();
-			showToast(error.detail || 'Login failed', 'error');
-			return false;
-		}
-	} catch (error) {
-		showToast('Network error during login', 'error');
-		return false;
-	}
+    if (response.ok) {
+      const data = await response.json();
+      const authData = {
+        isAuthenticated: true,
+        user: { id: data.user_id, username: data.username },
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token
+      };
+
+      auth.set(authData);
+      currentUser.set(authData.user);
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('auth', JSON.stringify(authData));
+      }
+
+      return { success: true };
+    } else {
+      return { success: false, error: 'Invalid credentials' };
+    }
+  } catch (error) {
+    return { success: false, error: 'Network error' };
+  }
 }
 
-export async function logout() {
-	try {
-		const token = localStorage.getItem('accessToken');
-		if (token) {
-			await fetch(`${API_BASE}/api/v1/logout/`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${token}`
-				}
-			});
-		}
-	} catch (error) {
-		console.error('Logout error:', error);
-	}
+export async function refreshToken() {
+  const currentAuth = JSON.parse(localStorage.getItem('auth') || '{}');
+  if (!currentAuth.refreshToken) return false;
 
-	// Clear local state
-	accessToken.set(null);
-	refreshToken.set(null);
-	isAuthenticated.set(false);
-	currentUser.set(null);
-	localStorage.removeItem('accessToken');
-	localStorage.removeItem('refreshToken');
-	showToast('Logged out successfully', 'info');
+  try {
+    const response = await fetch('/api/v1/refresh/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        refresh: currentAuth.refreshToken
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const authData = {
+        ...currentAuth,
+        accessToken: data.access_token
+      };
+
+      auth.set(authData);
+      currentUser.set(authData.user);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('auth', JSON.stringify(authData));
+      }
+      return true;
+    } else {
+      // Refresh token expired, logout
+      logout();
+      return false;
+    }
+  } catch (error) {
+    logout();
+    return false;
+  }
 }
 
-export async function refreshAccessToken() {
-	const refresh = localStorage.getItem('refreshToken');
-	if (!refresh) {
-		logout();
-		return false;
-	}
+export function logout() {
+  auth.set({
+    isAuthenticated: false,
+    user: null,
+    accessToken: null,
+    refreshToken: null
+  });
+  currentUser.set(null);
 
-	try {
-		const response = await fetch(`${API_BASE}/api/v1/token/refresh/`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ refresh })
-		});
-
-		if (response.ok) {
-			const data = await response.json();
-			accessToken.set(data.access);
-			localStorage.setItem('accessToken', data.access);
-			return true;
-		} else {
-			logout();
-			return false;
-		}
-	} catch (error) {
-		logout();
-		return false;
-	}
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('auth');
+  }
 }
 
-// Initialize auth state from localStorage
-export function initAuth() {
-	const token = localStorage.getItem('accessToken');
-	const refresh = localStorage.getItem('refreshToken');
-	if (token && refresh) {
-		accessToken.set(token);
-			refreshToken.set(refresh);
-		isAuthenticated.set(true);
-		// Optionally validate token here
-	}
+export async function initAuth() {
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('auth');
+    if (stored) {
+      try {
+        const authData = JSON.parse(stored);
+        // Validate tokens on app start
+        if (authData.accessToken && authData.refreshToken) {
+          // Try to validate access token by making a test request to Django backend
+          const testResponse = await fetch('http://192.168.0.104:8000/api/system/', {
+            headers: {
+              'Authorization': `Bearer ${authData.accessToken}`
+            }
+          });
+
+          if (testResponse.ok) {
+            auth.set(authData);
+            currentUser.set(authData.user);
+            return;
+          } else if (testResponse.status === 401) {
+            // Try to refresh token
+            const refreshed = await refreshToken();
+            if (refreshed) {
+              return;
+            }
+          }
+        }
+        // If we get here, tokens are invalid
+        localStorage.removeItem('auth');
+      } catch (e) {
+        localStorage.removeItem('auth');
+      }
+    }
+  }
 }

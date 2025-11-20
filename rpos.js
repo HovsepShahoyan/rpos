@@ -103,46 +103,18 @@ webserver.use(session({
 }));
 
 function authMiddleware(req, res, next) {
-  if (req.session && req.session.authenticated) {
-    next();
-  } else if (
-    req.path === '/login' ||
-    req.path === '/login.html' ||
-    req.path === '/login.ntl' ||
-    req.path.startsWith('/api/')
-  ) {
-    next();
-  } else {
-    res.redirect('/login');
+  // For JWT authentication, let the frontend handle auth
+  // Only protect specific routes that need session-based auth
+  if (req.path.startsWith('/api/loginAttempts') && (!req.session || !req.session.user || req.session.user.role !== 'admin')) {
+    console.warn('Unauthorized attempt to access /api/loginAttempts from', req.ip, 'sessionUser=', req.session && req.session.user);
+    return res.status(403).json({ error: 'Forbidden' });
   }
+  next();
 }
 
 webserver.use(authMiddleware);
 
-// Login routes
-webserver.get('/login', function(req, res) {
-  res.render('login.ntl');
-});
 
-webserver.post('/login', function(req, res) {
-  const { username, password } = req.body;
-  const ipAddress = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || (req.connection.socket ? req.connection.socket.remoteAddress : null);
-
-  // Look up user
-  const userRecord = users[username];
-  if (userRecord && userRecord.password === password) {
-    // Successful login
-    req.session.authenticated = true;
-    // store username and role in session
-    req.session.user = { username: username, role: userRecord.role };
-    loginTracker.logAttempt(username, true, ipAddress);
-    res.redirect('/');
-  } else {
-    // Failed login
-    loginTracker.logAttempt(username, false, ipAddress);
-    res.redirect('/login?error=1');
-  }
-});
 
 webserver.get('/api/loginAttempts', function (req, res) {
   // Require admin role

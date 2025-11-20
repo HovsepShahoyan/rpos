@@ -40,7 +40,7 @@
 					id="username"
 					bind:value={username}
 					required
-					autofocus
+
 					class="form-input"
 					placeholder="Enter your username"
 					disabled={isLoading}
@@ -246,22 +246,7 @@
 		100% { transform: rotate(360deg); }
 	}
 
-	.login-footer {
-		text-align: center;
-		margin-top: 2rem;
-		padding-top: 1.5rem;
-		border-top: 1px solid #555555;
-	}
 
-	.login-footer p {
-		color: #888888;
-		font-size: 0.8rem;
-		font-family: 'Courier New', monospace;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		margin: 0;
-		opacity: 0.7;
-	}
 
 	/* Responsive Design */
 	@media (max-width: 480px) {

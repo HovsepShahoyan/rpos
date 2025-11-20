@@ -15,6 +15,15 @@ class LoginAPIView(TokenObtainPairView):
         user = User.objects.get(username=request.data.get('username'))
         log_user_event(user, Audit.Action.LOGIN, request)
 
+        # Customize response to match frontend expectations
+        data = response.data
+        custom_data = {
+            'access_token': data['access'],
+            'refresh_token': data['refresh'],
+            'user_id': user.id,
+            'username': user.username
+        }
+        response.data = custom_data
         return response
 
 

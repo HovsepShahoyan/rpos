@@ -10,6 +10,6 @@ router.register(r'cameras', CameraViewSet)
 urlpatterns = [
     path("login/", LoginAPIView.as_view(), name="login"),
     path("logout/", LogoutAPIView.as_view(), name="logout"),
-    path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("", include(router.urls)),
 ]
