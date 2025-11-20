@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+ import { writable, derived } from 'svelte/store';
 
 export const auth = writable({
   isAuthenticated: false,
@@ -66,9 +66,16 @@ export async function refreshToken() {
 
     if (response.ok) {
       const data = await response.json();
+      // Decode the new access token to get user_id and username
+      const token = JSON.parse(atob(data.access_token.split('.')[1]));
+      const user_id = token.user_id;
+      const username = token.username;
+
       const authData = {
         ...currentAuth,
-        accessToken: data.access_token
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token || currentAuth.refreshToken, // Update if new refresh token provided
+        user: { id: user_id, username: username } // Update user info from token
       };
 
       auth.set(authData);
@@ -77,7 +84,7 @@ export async function refreshToken() {
         localStorage.setItem('auth', JSON.stringify(authData));
       }
       return true;
-    } else {
+    }
       // Refresh token expired, logout
       logout();
       return false;
@@ -102,6 +109,16 @@ export function logout() {
   }
 }
 
+function isTokenExpired(token) {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const currentTime = Date.now() / 1000;
+    return payload.exp < currentTime;
+  } catch (e) {
+    return true; // If can't decode, consider expired
+  }
+}
+
 export async function initAuth() {
   if (typeof window !== 'undefined') {
     const stored = localStorage.getItem('auth');
@@ -110,18 +127,11 @@ export async function initAuth() {
         const authData = JSON.parse(stored);
         // Validate tokens on app start
         if (authData.accessToken && authData.refreshToken) {
-          // Try to validate access token by making a test request to Django backend
-          const testResponse = await fetch('http://192.168.0.104:8000/api/system/', {
-            headers: {
-              'Authorization': `Bearer ${authData.accessToken}`
-            }
-          });
-
-          if (testResponse.ok) {
+          if (!isTokenExpired(authData.accessToken)) {
             auth.set(authData);
             currentUser.set(authData.user);
             return;
-          } else if (testResponse.status === 401) {
+          } else {
             // Try to refresh token
             const refreshed = await refreshToken();
             if (refreshed) {
