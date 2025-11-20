@@ -21,16 +21,11 @@
 		stopDistancePolling
 	} from './stores/telemetry.js';
 
+	let pollingStarted = false;
+
 	onMount(() => {
 		// Initialize authentication state
 		initAuth();
-
-		// Start polling for telemetry data only if authenticated
-		if ($isAuthenticated) {
-			startTelemetryPolling();
-			startAnglesPolling();
-			startDistancePolling();
-		}
 	});
 
 	onDestroy(() => {
@@ -38,7 +33,24 @@
 		stopTelemetryPolling();
 		stopAnglesPolling();
 		stopDistancePolling();
+		pollingStarted = false;
 	});
+
+	// Start polling when authenticated
+	$: if ($isAuthenticated && !pollingStarted) {
+		startTelemetryPolling();
+		startAnglesPolling();
+		startDistancePolling();
+		pollingStarted = true;
+	}
+
+	// Stop polling when not authenticated
+	$: if (!$isAuthenticated && pollingStarted) {
+		stopTelemetryPolling();
+		stopAnglesPolling();
+		stopDistancePolling();
+		pollingStarted = false;
+	}
 </script>
 
 {#if !$isAuthenticated}
