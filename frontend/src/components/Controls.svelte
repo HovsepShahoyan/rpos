@@ -33,11 +33,11 @@
 		font-size: 2.25rem;
 		font-weight: 700;
 		margin-bottom: 0.75rem;
-		color: #00ff41;
+		color: #15698a;
 		font-family: 'Courier New', monospace;
 		text-transform: uppercase;
 		letter-spacing: 2px;
-		text-shadow: 0 0 20px #00ff41;
+		text-shadow: 0 0 20px #15698a;
 		display: inline-block;
 	}
 
@@ -67,8 +67,8 @@
 		left: 0;
 		right: 0;
 		height: 4px;
-		background: linear-gradient(90deg, #00ff41 0%, #39ff77 50%, #00ff41 100%);
-		box-shadow: 0 0 10px #00ff41;
+		background: linear-gradient(90deg, #15698a 0%, #1a7a9e 50%, #15698a 100%);
+		box-shadow: 0 0 10px #15698a;
 	}
 
 	.card-header {
@@ -81,11 +81,11 @@
 	.card-title {
 		font-size: 1.5rem;
 		font-weight: 700;
-		color: #00ff41;
+		color: #15698a;
 		font-family: 'Courier New', monospace;
 		text-transform: uppercase;
 		letter-spacing: 1px;
-		text-shadow: 0 0 10px #00ff41;
+		text-shadow: 0 0 10px #15698a;
 	}
 
 	p {

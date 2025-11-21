@@ -129,7 +129,7 @@
 	.toast {
 		background: rgba(26, 32, 54, 0.9);
 		backdrop-filter: blur(12px);
-		border-left: 4px solid #00d4aa;
+		border-left: 4px solid #15698a;
 		border-radius: 0.875rem;
 		padding: 1.25rem;
 		min-width: 320px;
@@ -141,11 +141,11 @@
 	}
 
 	.toast.info {
-		border-left-color: #00d4aa;
+		border-left-color: #15698a;
 	}
 
 	.toast.success {
-		border-left-color: #00d4aa;
+		border-left-color: #15698a;
 	}
 
 	.toast.error {

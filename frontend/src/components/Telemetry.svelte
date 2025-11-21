@@ -124,11 +124,11 @@
 		font-size: 2.25rem;
 		font-weight: 700;
 		margin-bottom: 0.75rem;
-		color: #00ff41;
+		color: #15698a;
 		font-family: 'Courier New', monospace;
 		text-transform: uppercase;
 		letter-spacing: 2px;
-		text-shadow: 0 0 20px #00ff41;
+		text-shadow: 0 0 20px #15698a;
 		display: inline-block;
 	}
 
@@ -167,14 +167,14 @@
 		left: 0;
 		right: 0;
 		height: 4px;
-		background: linear-gradient(90deg, #00ff41 0%, #39ff77 50%, #00ff41 100%);
-		box-shadow: 0 0 10px #00ff41;
+		background: linear-gradient(90deg, #15698a 0%, #1a7a9e 50%, #15698a 100%);
+		box-shadow: 0 0 10px #15698a;
 	}
 
 	.card:hover {
 		transform: translateY(-3px);
-		box-shadow: 0 12px 40px rgba(0, 255, 65, 0.2);
-		border-color: #00ff41;
+		box-shadow: 0 12px 40px rgba(21, 105, 138, 0.2);
+		border-color: #15698a;
 	}
 
 	.card-header {
@@ -187,11 +187,11 @@
 	.card-title {
 		font-size: 1.4rem;
 		font-weight: 700;
-		color: #00ff41;
+		color: #15698a;
 		font-family: 'Courier New', monospace;
 		text-transform: uppercase;
 		letter-spacing: 1px;
-		text-shadow: 0 0 10px #00ff41;
+		text-shadow: 0 0 10px #15698a;
 	}
 
 	.data-row {
@@ -210,9 +210,9 @@
 
 	.data-row:hover {
 		background: linear-gradient(135deg, #3d3d3d 0%, #4d4d4d 100%);
-		border-color: #00ff41;
+		border-color: #15698a;
 		transform: translateX(3px);
-		box-shadow: 0 0 15px rgba(0, 255, 65, 0.1);
+		box-shadow: 0 0 15px rgba(21, 105, 138, 0.1);
 	}
 
 	.data-row:hover::before {
@@ -222,8 +222,8 @@
 		top: 0;
 		bottom: 0;
 		width: 4px;
-		background: #00ff41;
-		box-shadow: 0 0 10px #00ff41;
+		background: #15698a;
+		box-shadow: 0 0 10px #15698a;
 	}
 
 	.data-label {
@@ -237,7 +237,7 @@
 
 	.data-value {
 		font-family: 'Courier New', monospace;
-		color: #00ff41;
+		color: #15698a;
 		font-weight: 700;
 		background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
 		padding: 0.875rem 1.5rem;
@@ -245,7 +245,7 @@
 		min-width: 140px;
 		text-align: center;
 		border: 2px solid #555555;
-		text-shadow: 0 0 5px #00ff41;
+		text-shadow: 0 0 5px #15698a;
 		font-size: 1.1rem;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
@@ -253,8 +253,8 @@
 	}
 
 	.data-value:hover {
-		border-color: #00ff41;
-		box-shadow: 0 0 15px rgba(0, 255, 65, 0.3);
+		border-color: #15698a;
+		box-shadow: 0 0 15px rgba(21, 105, 138, 0.3);
 	}
 
 	/* Loading state styling */

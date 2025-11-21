@@ -280,11 +280,11 @@
 		font-size: 2.25rem;
 		font-weight: 700;
 		margin-bottom: 0.75rem;
-		color: #00ff41;
+		color: #15698a;
 		font-family: 'Courier New', monospace;
 		text-transform: uppercase;
 		letter-spacing: 2px;
-		text-shadow: 0 0 20px #00ff41;
+		text-shadow: 0 0 20px #15698a;
 		display: inline-block;
 	}
 
@@ -314,8 +314,8 @@
 		left: 0;
 		right: 0;
 		height: 4px;
-		background: linear-gradient(90deg, #00ff41 0%, #39ff77 50%, #00ff41 100%);
-		box-shadow: 0 0 10px #00ff41;
+		background: linear-gradient(90deg, #15698a 0%, #1a7a9e 50%, #15698a 100%);
+		box-shadow: 0 0 10px #15698a;
 	}
 
 	.card-header {
@@ -328,11 +328,11 @@
 	.card-title {
 		font-size: 1.5rem;
 		font-weight: 700;
-		color: #00ff41;
+		color: #15698a;
 		font-family: 'Courier New', monospace;
 		text-transform: uppercase;
 		letter-spacing: 1px;
-		text-shadow: 0 0 10px #00ff41;
+		text-shadow: 0 0 10px #15698a;
 	}
 
 	.settings-table {
@@ -356,9 +356,9 @@
 	}
 
 	.settings-row:hover {
-		border-color: #00ff41;
+		border-color: #15698a;
 		transform: translateY(-2px);
-		box-shadow: 0 8px 24px rgba(0, 255, 65, 0.2);
+		box-shadow: 0 8px 24px rgba(21, 105, 138, 0.2);
 	}
 
 	.settings-row:hover::before {
@@ -368,8 +368,8 @@
 		top: 0;
 		bottom: 0;
 		width: 4px;
-		background: #00ff41;
-		box-shadow: 0 0 10px #00ff41;
+		background: #15698a;
+		box-shadow: 0 0 10px #15698a;
 	}
 
 	.settings-label {
@@ -398,8 +398,8 @@
 
 	.form-control:focus {
 		outline: none;
-		border-color: #00ff41;
-		box-shadow: 0 0 20px rgba(0, 255, 65, 0.3);
+		border-color: #15698a;
+		box-shadow: 0 0 20px rgba(21, 105, 138, 0.3);
 		background: linear-gradient(135deg, #2a2a2a 0%, #3a3a3a 100%);
 	}
 
@@ -423,17 +423,17 @@
 	}
 
 	.btn-primary {
-		background: linear-gradient(135deg, #00ff41 0%, #39ff77 100%);
+		background: linear-gradient(135deg, #15698a 0%, #1a7a9e 100%);
 		color: #000000;
-		border-color: #00ff41;
+		border-color: #15698a;
 		text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
 	}
 
 	.btn-primary:hover {
-		background: linear-gradient(135deg, #39ff77 0%, #00ff41 100%);
-		border-color: #39ff77;
+		background: linear-gradient(135deg, #1a7a9e 0%, #15698a 100%);
+		border-color: #1a7a9e;
 		transform: translateY(-3px);
-		box-shadow: 0 8px 20px rgba(0, 255, 65, 0.4);
+		box-shadow: 0 8px 20px rgba(21, 105, 138, 0.4);
 	}
 
 	.btn-primary:active {
@@ -519,7 +519,7 @@
 
 	output {
 		background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
-		color: #00ff41;
+		color: #15698a;
 		font-weight: 700;
 		font-size: 1.1rem;
 		padding: 0.75rem 1.5rem;
@@ -530,7 +530,7 @@
 		font-family: 'Courier New', monospace;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
-		text-shadow: 0 0 5px #00ff41;
+		text-shadow: 0 0 5px #15698a;
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 	}
 
@@ -552,9 +552,9 @@
 		width: 20px;
 		height: 20px;
 		border-radius: 50%;
-		background: linear-gradient(135deg, #00ff41 0%, #39ff77 100%);
+		background: linear-gradient(135deg, #15698a 0%, #1a7a9e 100%);
 		cursor: pointer;
-		box-shadow: 0 0 10px #00ff41;
+		box-shadow: 0 0 10px #15698a;
 		border: 2px solid #000000;
 	}
 
@@ -562,9 +562,9 @@
 		width: 20px;
 		height: 20px;
 		border-radius: 50%;
-		background: linear-gradient(135deg, #00ff41 0%, #39ff77 100%);
+		background: linear-gradient(135deg, #15698a 0%, #1a7a9e 100%);
 		cursor: pointer;
-		box-shadow: 0 0 10px #00ff41;
+		box-shadow: 0 0 10px #15698a;
 		border: 2px solid #000000;
 	}
 
@@ -605,18 +605,18 @@
 	}
 
 	.camera-item:hover {
-		border-color: #00ff41;
+		border-color: #15698a;
 		transform: translateY(-2px);
-		box-shadow: 0 8px 24px rgba(0, 255, 65, 0.2);
+		box-shadow: 0 8px 24px rgba(21, 105, 138, 0.2);
 	}
 
 	.camera-info {
-		color: #00ff41;
+		color: #15698a;
 		font-weight: 700;
 		font-family: 'Courier New', monospace;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
-		text-shadow: 0 0 5px #00ff41;
+		text-shadow: 0 0 5px #15698a;
 	}
 
 	.camera-details {

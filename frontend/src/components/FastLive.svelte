@@ -784,8 +784,8 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 	:root {
 		--primary-bg: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
 		--secondary-bg: linear-gradient(135deg, #2d2d2d 0%, #3d3d3d 100%);
-		--accent-color: #00ff41; /* Military green */
-		--accent-hover: #39ff77;
+		--accent-color:rgb(21, 105, 138); /* Military green */
+		--accent-hover:rgb(21, 105, 138);
 		--warning-color: #ffaa00; /* Military amber */
 		--warning-hover: #ffcc00;
 		--danger-color: #ff4444; /* Military red */
@@ -795,7 +795,7 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 		--border-color: #555555;
 		--border-hover: #777777;
 		--shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-		--shadow-hover: 0 12px 40px rgba(0, 255, 65, 0.15);
+		--shadow-hover: 0 12px 40px rgba(21, 105, 138, 0.15);
 		--border-radius: 6px;
 		--transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 	}
@@ -844,7 +844,7 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 
 	.angles-top div:hover {
 		border-color: var(--accent-color);
-		box-shadow: 0 0 20px rgba(0, 212, 170, 0.1);
+		box-shadow: 0 0 20px rgba(21, 105, 138, 0.1);
 	}
 
 	.angles-top span {
@@ -885,7 +885,7 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 		left: -100%;
 		width: 100%;
 		height: 100%;
-		background: linear-gradient(90deg, transparent, rgba(0, 212, 170, 0.2), transparent);
+		background: linear-gradient(90deg, transparent, rgba(21, 105, 138, 0.2), transparent);
 		transition: left 0.5s;
 	}
 
@@ -944,7 +944,7 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 
 	.standard-button:hover {
 		transform: translateY(-3px);
-		box-shadow: 0 8px 25px rgba(0, 212, 170, 0.5);
+		box-shadow: 0 8px 25px rgba(21, 105, 138, 0.5);
 	}
 
 	.standard-button:active {
@@ -999,7 +999,7 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 		max-width: none;
 		max-height: none;
 		transform: translate(-50%, -50%);
-		filter: drop-shadow(0 0 10px rgba(0, 212, 170, 0.5));
+		filter: drop-shadow(0 0 10px rgba(21, 105, 138, 0.5));
 	}
 
 	:global(#videoOverlay) {
@@ -1102,7 +1102,7 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 
 	.control-section:hover {
 		border-color: var(--accent-color);
-		box-shadow: 0 0 20px rgba(0, 212, 170, 0.1);
+		box-shadow: 0 0 20px rgba(21, 105, 138, 0.1);
 	}
 
 	.control-label {
@@ -1166,7 +1166,7 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 		left: 50%;
 		width: 0;
 		height: 0;
-		background: rgba(0, 212, 170, 0.2);
+		background: rgba(21, 105, 138, 0.2);
 		border-radius: 50%;
 		transform: translate(-50%, -50%);
 		transition: width 0.3s, height 0.3s;
@@ -1228,7 +1228,7 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 	.speed-btn:hover {
 		border-color: var(--accent-color);
 		transform: translateY(-1px);
-		box-shadow: 0 4px 12px rgba(0, 212, 170, 0.2);
+		box-shadow: 0 4px 12px rgba(21, 105, 138, 0.2);
 	}
 
 	.speed-btn.active {
@@ -1304,7 +1304,7 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 		left: -100%;
 		width: 100%;
 		height: 100%;
-		background: linear-gradient(90deg, transparent, rgba(0, 212, 170, 0.2), transparent);
+		background: linear-gradient(90deg, transparent, rgba(21, 105, 138, 0.2), transparent);
 		transition: left 0.5s;
 	}
 
@@ -1348,7 +1348,7 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 
 	.adjustment-row:hover {
 		border-color: var(--accent-color);
-		background: rgba(0, 212, 170, 0.05);
+		background: rgba(21, 105, 138, 0.05);
 	}
 
 	.adjustment-row span {
@@ -1417,7 +1417,7 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 		left: 50%;
 		width: 0;
 		height: 0;
-		background: rgba(0, 212, 170, 0.2);
+		background: rgba(21, 105, 138, 0.2);
 		border-radius: 50%;
 		transform: translate(-50%, -50%);
 		transition: width 0.3s, height 0.3s;

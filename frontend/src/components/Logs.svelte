@@ -115,11 +115,11 @@
 		font-size: 2.25rem;
 		font-weight: 700;
 		margin-bottom: 0.75rem;
-		color: #00ff41;
+		color: #15698a;
 		font-family: 'Courier New', monospace;
 		text-transform: uppercase;
 		letter-spacing: 2px;
-		text-shadow: 0 0 20px #00ff41;
+		text-shadow: 0 0 20px #15698a;
 		display: inline-block;
 	}
 
@@ -149,8 +149,8 @@
 		left: 0;
 		right: 0;
 		height: 4px;
-		background: linear-gradient(90deg, #00ff41 0%, #39ff77 50%, #00ff41 100%);
-		box-shadow: 0 0 10px #00ff41;
+		background: linear-gradient(90deg, #15698a 0%, #1a7a9e 50%, #15698a 100%);
+		box-shadow: 0 0 10px #15698a;
 	}
 
 	.card-header {
@@ -163,11 +163,11 @@
 	.card-title {
 		font-size: 1.5rem;
 		font-weight: 700;
-		color: #00ff41;
+		color: #15698a;
 		font-family: 'Courier New', monospace;
 		text-transform: uppercase;
 		letter-spacing: 1px;
-		text-shadow: 0 0 10px #00ff41;
+		text-shadow: 0 0 10px #15698a;
 	}
 
 	.logs-controls {
@@ -200,8 +200,8 @@
 
 	.form-control:focus {
 		outline: none;
-		border-color: #00ff41;
-		box-shadow: 0 0 20px rgba(0, 255, 65, 0.3);
+		border-color: #15698a;
+		box-shadow: 0 0 20px rgba(21, 105, 138, 0.3);
 		background: linear-gradient(135deg, #2a2a2a 0%, #3a3a3a 100%);
 	}
 
@@ -224,7 +224,7 @@
 	label input[type="checkbox"] {
 		width: 16px;
 		height: 16px;
-		accent-color: #00ff41;
+		accent-color: #15698a;
 		cursor: pointer;
 	}
 
@@ -244,17 +244,17 @@
 	}
 
 	.btn-primary {
-		background: linear-gradient(135deg, #00ff41 0%, #39ff77 100%);
+		background: linear-gradient(135deg, #15698a 0%, #1a7a9e 100%);
 		color: #000000;
-		border-color: #00ff41;
+		border-color: #15698a;
 		text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
 	}
 
 	.btn-primary:hover {
-		background: linear-gradient(135deg, #39ff77 0%, #00ff41 100%);
-		border-color: #39ff77;
+		background: linear-gradient(135deg, #1a7a9e 0%, #15698a 100%);
+		border-color: #1a7a9e;
 		transform: translateY(-3px);
-		box-shadow: 0 8px 20px rgba(0, 255, 65, 0.4);
+		box-shadow: 0 8px 20px rgba(21, 105, 138, 0.4);
 	}
 
 	.btn-primary:active {
@@ -286,11 +286,11 @@
 	}
 
 	.logs-table th {
-		color: #00ff41;
+		color: #15698a;
 		font-weight: 700;
 		background: linear-gradient(135deg, #2d2d2d 0%, #3d3d3d 100%);
-		text-shadow: 0 0 5px #00ff41;
-		border-bottom: 2px solid #00ff41;
+		text-shadow: 0 0 5px #15698a;
+		border-bottom: 2px solid #15698a;
 		position: sticky;
 		top: 0;
 		z-index: 10;
@@ -329,11 +329,11 @@
 	}
 
 	.badge.success {
-		background: linear-gradient(135deg, #00ff41 0%, #39ff77 100%);
+		background: linear-gradient(135deg, #15698a 0%, #1a7a9e 100%);
 		color: #000000;
-		border-color: #00ff41;
+		border-color: #15698a;
 		text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
-		box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+		box-shadow: 0 0 10px rgba(21, 105, 138, 0.3);
 	}
 
 	.badge.failed {

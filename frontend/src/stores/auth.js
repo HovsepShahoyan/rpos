@@ -84,7 +84,7 @@ export async function refreshToken() {
         localStorage.setItem('auth', JSON.stringify(authData));
       }
       return true;
-    }
+    } else {
       // Refresh token expired, logout
       logout();
       return false;

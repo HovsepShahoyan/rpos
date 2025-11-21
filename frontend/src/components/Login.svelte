@@ -93,8 +93,8 @@
 		right: 0;
 		bottom: 0;
 		background:
-			radial-gradient(circle at 20% 50%, rgba(0, 136, 0, 0.05) 0%, transparent 50%),
-			radial-gradient(circle at 80% 20%, rgba(0, 136, 0, 0.03) 0%, transparent 50%),
+			radial-gradient(circle at 20% 50%, rgba(21, 105, 138, 0.05) 0%, transparent 50%),
+			radial-gradient(circle at 80% 20%, rgba(21, 105, 138, 0.03) 0%, transparent 50%),
 			radial-gradient(circle at 40% 80%, rgba(170, 136, 0, 0.02) 0%, transparent 50%);
 		pointer-events: none;
 	}
@@ -103,14 +103,14 @@
 		background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
 		backdrop-filter: blur(20px);
 		-webkit-backdrop-filter: blur(20px);
-		border: 2px solid #008800;
+		border: 2px solid #15698a;
 		border-radius: 12px;
 		padding: 3rem;
 		width: 100%;
 		max-width: 420px;
 		box-shadow:
 			0 20px 40px rgba(0, 0, 0, 0.8),
-			0 0 60px rgba(0, 136, 0, 0.1),
+			0 0 60px rgba(21, 105, 138, 0.1),
 			inset 0 1px 0 rgba(255, 255, 255, 0.1);
 		position: relative;
 		z-index: 1;
@@ -123,19 +123,19 @@
 
 	.logo {
 		margin-bottom: 1rem;
-		color: #008800;
-		filter: drop-shadow(0 0 10px #008800);
+		color: #15698a;
+		filter: drop-shadow(0 0 10px #15698a);
 	}
 
 	.login-header h1 {
-		color: #008800;
+		color: #15698a;
 		font-size: 2.5rem;
 		font-weight: 700;
 		font-family: 'Courier New', monospace;
 		text-transform: uppercase;
 		letter-spacing: 2px;
 		margin: 0 0 0.5rem 0;
-		text-shadow: 0 0 15px #008800;
+		text-shadow: 0 0 15px #15698a;
 	}
 
 	.subtitle {
@@ -183,8 +183,8 @@
 
 	.form-input:focus {
 		outline: none;
-		border-color: #008800;
-		box-shadow: 0 0 20px rgba(0, 136, 0, 0.3);
+		border-color: #15698a;
+		box-shadow: 0 0 20px rgba(21, 105, 138, 0.3);
 		background: linear-gradient(135deg, #3d3d3d 0%, #4d4d4d 100%);
 	}
 
@@ -199,11 +199,11 @@
 	}
 
 	.login-btn {
-		background: linear-gradient(135deg, #008800 0%, #00aa00 100%);
-		border: 2px solid #008800;
+		background: linear-gradient(135deg, #15698a 0%, #1a7a9e 100%);
+		border: 2px solid #15698a;
 		border-radius: 6px;
 		padding: 1rem 2rem;
-		color: #000000;
+		color: #ffffff;
 		font-size: 1.1rem;
 		font-weight: 700;
 		font-family: 'Courier New', monospace;
@@ -211,7 +211,7 @@
 		letter-spacing: 1px;
 		cursor: pointer;
 		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-		box-shadow: 0 4px 15px rgba(0, 136, 0, 0.3);
+		box-shadow: 0 4px 15px rgba(21, 105, 138, 0.3);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -220,22 +220,22 @@
 	}
 
 	.login-btn:hover:not(:disabled) {
-		background: linear-gradient(135deg, #00aa00 0%, #00cc00 100%);
+		background: linear-gradient(135deg, #1a7a9e 0%, #15698a 100%);
 		transform: translateY(-2px);
-		box-shadow: 0 6px 20px rgba(0, 136, 0, 0.5);
+		box-shadow: 0 6px 20px rgba(21, 105, 138, 0.5);
 	}
 
 	.login-btn:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
 		transform: none;
-		box-shadow: 0 2px 8px rgba(0, 136, 0, 0.2);
+		box-shadow: 0 2px 8px rgba(21, 105, 138, 0.2);
 	}
 
 	.spinner {
 		width: 20px;
 		height: 20px;
-		border: 2px solid #000000;
+		border: 2px solid #ffffff;
 		border-top: 2px solid transparent;
 		border-radius: 50%;
 		animation: spin 1s linear infinite;

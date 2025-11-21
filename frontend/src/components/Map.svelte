@@ -140,11 +140,11 @@
 		font-size: 2.25rem;
 		font-weight: 700;
 		margin-bottom: 0.75rem;
-		color: #00ff41;
+		color: #15698a;
 		font-family: 'Courier New', monospace;
 		text-transform: uppercase;
 		letter-spacing: 2px;
-		text-shadow: 0 0 20px #00ff41;
+		text-shadow: 0 0 20px #15698a;
 		display: inline-block;
 	}
 
@@ -178,8 +178,8 @@
 		left: 0;
 		right: 0;
 		height: 4px;
-		background: linear-gradient(90deg, #00ff41 0%, #39ff77 50%, #00ff41 100%);
-		box-shadow: 0 0 10px #00ff41;
+		background: linear-gradient(90deg, #15698a 0%, #1a7a9e 50%, #15698a 100%);
+		box-shadow: 0 0 10px #15698a;
 		z-index: 10;
 	}
 
@@ -202,7 +202,7 @@
 		left: 0;
 		right: 0;
 		height: 1px;
-		background: linear-gradient(90deg, transparent 0%, #00ff41 50%, transparent 100%);
+		background: linear-gradient(90deg, transparent 0%, #15698a 50%, transparent 100%);
 		opacity: 0.5;
 	}
 
@@ -236,9 +236,9 @@
 		width: 18px !important;
 		height: 18px !important;
 		border-radius: 50% !important;
-		background: linear-gradient(135deg, #00ff41 0%, #39ff77 100%) !important;
+		background: linear-gradient(135deg, #15698a 0%, #1a7a9e 100%) !important;
 		cursor: pointer !important;
-		box-shadow: 0 0 8px #00ff41 !important;
+		box-shadow: 0 0 8px #15698a !important;
 		border: 2px solid #000000 !important;
 	}
 
@@ -246,28 +246,28 @@
 		width: 18px !important;
 		height: 18px !important;
 		border-radius: 50% !important;
-		background: linear-gradient(135deg, #00ff41 0%, #39ff77 100%) !important;
+		background: linear-gradient(135deg, #15698a 0%, #1a7a9e 100%) !important;
 		cursor: pointer !important;
-		box-shadow: 0 0 8px #00ff41 !important;
+		box-shadow: 0 0 8px #15698a !important;
 		border: 2px solid #000000 !important;
 	}
 
 	input[type="checkbox"] {
 		width: 16px !important;
 		height: 16px !important;
-		accent-color: #00ff41 !important;
+		accent-color: #15698a !important;
 		cursor: pointer !important;
 		border-radius: 3px !important;
 	}
 
 	span {
-		color: #00ff41 !important;
+		color: #15698a !important;
 		font-family: 'Courier New', monospace !important;
 		text-transform: uppercase !important;
 		letter-spacing: 0.5px !important;
 		font-weight: 700 !important;
 		font-size: 1rem !important;
-		text-shadow: 0 0 5px #00ff41 !important;
+		text-shadow: 0 0 5px #15698a !important;
 		min-width: 50px !important;
 		text-align: center !important;
 	}
