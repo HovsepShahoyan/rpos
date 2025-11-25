@@ -1,5 +1,4 @@
-
- <script>
+<script>
 	import { onMount } from 'svelte';
 	import { currentStream, currentSpeed } from '../stores/camera.js';
 	import { angles, distance } from '../stores/telemetry.js';
@@ -97,6 +96,78 @@
 	}
 
 	function measureRange() {
+		console.log('[MEASURE_RANGE] Button clicked - Starting audit log process');
+		console.log('[MEASURE_RANGE] API_BASE:', API_BASE);
+		
+		// Get token from auth object in localStorage
+		let token = null;
+		try {
+			const authData = localStorage.getItem('auth');
+			console.log('[MEASURE_RANGE] Auth data exists in localStorage:', !!authData);
+			if (authData) {
+				const auth = JSON.parse(authData);
+				token = auth.accessToken;
+				console.log('[MEASURE_RANGE] Parsed auth object:', { 
+					hasAccessToken: !!auth.accessToken, 
+					hasRefreshToken: !!auth.refreshToken,
+					isAuthenticated: auth.isAuthenticated,
+					user: auth.user?.username
+				});
+			}
+		} catch (e) {
+			console.error('[MEASURE_RANGE] Error parsing auth from localStorage:', e);
+		}
+		
+		console.log('[MEASURE_RANGE] Access token exists:', !!token);
+		console.log('[MEASURE_RANGE] Access token (first 20 chars):', token ? token.substring(0, 20) + '...' : 'null');
+		
+		if (!token) {
+			console.error('[MEASURE_RANGE] No access token found! User may not be logged in.');
+			showToast('Please login to use this feature', 'error');
+			return;
+		}
+		
+		const url = `${API_BASE}/api/v1/users/measure-range/`;
+		console.log('[MEASURE_RANGE] Full URL:', url);
+		
+		// Log measure range event to backend
+		fetch(url, {
+			method: 'POST',
+			headers: {
+				'Authorization': `Bearer ${token}`,
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({})
+		}).then(async res => {
+			console.log('[MEASURE_RANGE] Response status:', res.status);
+			console.log('[MEASURE_RANGE] Response ok:', res.ok);
+			console.log('[MEASURE_RANGE] Response headers:', Object.fromEntries(res.headers.entries()));
+			
+			if (res.ok) {
+				const data = await res.json();
+				console.log('[MEASURE_RANGE] Success response data:', data);
+				showToast('Measure Range event logged', 'success');
+			} else {
+				const errorText = await res.text();
+				console.error('[MEASURE_RANGE] Error response status:', res.status);
+				console.error('[MEASURE_RANGE] Error response text:', errorText);
+				
+				if (res.status === 401) {
+					showToast('Authentication failed. Please login again.', 'error');
+				} else {
+					showToast('Failed to log Measure Range event: ' + res.status, 'error');
+				}
+			}
+		}).catch(err => {
+			console.error('[MEASURE_RANGE] Fetch exception:', err);
+			console.error('[MEASURE_RANGE] Error name:', err.name);
+			console.error('[MEASURE_RANGE] Error message:', err.message);
+			console.error('[MEASURE_RANGE] Error stack:', err.stack);
+			showToast('Error logging Measure Range event', 'error');
+		});
+
+		// Existing measure range logic
+		console.log('[MEASURE_RANGE] Triggering range_finder hardware button');
 		handlePTZButton('range_finder', 'true');
 		setTimeout(() => handlePTZButton('range_finder', 'false'), 100);
 	}
@@ -1319,7 +1390,7 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 	}
 
 	.mode-btn.active {
-		background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-hover) 100%);
+		background: linear-gradient(135deg, var (--accent-color) 0%, var(--accent-hover) 100%);
 		color: #000000;
 		border-color: var(--accent-color);
 		font-weight: 700;
@@ -1364,7 +1435,7 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 		font-weight: 700;
 		text-align: center;
 		min-width: 50px;
-		text-shadow: 0 0 10px var(--accent-color);
+		text-shadow: 0 0 10px var (--accent-color);
 		font-family: 'Courier New', monospace;
 	}
 

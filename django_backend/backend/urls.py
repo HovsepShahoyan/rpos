@@ -24,4 +24,5 @@ urlpatterns = [
     path('', views.SystemViewSet.as_view({'get': 'root'}), name='root'),
     path('admin/', admin.site.urls),
     path('api/', include('apps.api.urls')),
+    path('api/v1/', include('apps.api.view.v1.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -11,5 +11,6 @@ urlpatterns = [
     path("login/", LoginAPIView.as_view(), name="login"),
     path("logout/", LogoutAPIView.as_view(), name="logout"),
     path("refresh/", RefreshAPIView.as_view(), name="token_refresh"),
+    path("users/", include("apps.api.view.v1.users.urls")),
     path("", include(router.urls)),
 ]
