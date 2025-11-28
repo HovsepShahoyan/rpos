@@ -3,7 +3,7 @@
 	import { currentStream, currentSpeed } from '../stores/camera.js';
 	import { angles, distance } from '../stores/telemetry.js';
 	import { showToast } from '../stores/ui.js';
-	import { setSpeed, setCurrentStream, sendControlValue, setPTZDirection, setZoomLevel, movePTZ, getCurrentZoom, getPTZPosition } from '../utils/api.js';
+	import { setSpeed, setCurrentStream, sendControlValue, setPTZDirection, setZoomLevel, movePTZ, getCurrentZoom, getPTZPosition, fetchCameras, setCameraConfig } from '../utils/api.js';
 	import { API_BASE } from '../utils/constants.js';
 	import {
 		GO2RTC_BASE,
@@ -20,6 +20,8 @@
 
 	let iframeUrl = '';
 	let selectedSpeed = 4;
+	let cameras = [];
+	let selectedCameraId = null;
 
 	// PTZ Click and Crosshair Variables
 	let currentVideoWidth = 1920;
@@ -37,6 +39,37 @@
 			const srcName = `stream${streamNum}`;
 			iframeUrl = `${GO2RTC_BASE}/webrtc.html?src=${encodeURIComponent(srcName)}`;
 		}
+
+	// Load cameras from backend
+	async function loadCameras() {
+		try {
+			cameras = await fetchCameras();
+			console.log('Loaded cameras:', cameras);
+			// Auto-select first camera if available
+			if (cameras.length > 0 && !selectedCameraId) {
+				selectedCameraId = cameras[0].id;
+				await setSelectedCamera(cameras[0].id);
+			}
+		} catch (error) {
+			console.error('Failed to load cameras:', error);
+			showToast('Failed to load cameras', 'error');
+		}
+	}
+
+	// Set selected camera and configure CommandClient
+	async function setSelectedCamera(cameraId) {
+		try {
+			selectedCameraId = cameraId;
+			const camera = cameras.find(c => c.id === cameraId);
+			if (camera) {
+				await setCameraConfig(cameraId);
+				showToast(`Camera "${camera.name}" selected`, 'success');
+			}
+		} catch (error) {
+			console.error('Failed to set camera:', error);
+			showToast('Failed to set camera configuration', 'error');
+		}
+	}
 
 	// Switch stream: keep mapping consistent with original JS
 	// stream 1 => IR (cameraType=2) width 1350, stream 2 => Day (cameraType=1) width 1920
@@ -603,7 +636,10 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 		showToast('Contrast set to ' + currentContrast, 'success');
 	}
 
-	onMount(() => {
+	onMount(async () => {
+		// Load cameras from backend
+		await loadCameras();
+
 		// Initialize with stream 1
 		switchStream(1);
 
@@ -648,6 +684,19 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 		<div>angleD: <span>{$angles.azimuth_degrees || '--'}</span></div>
 		<div>mestoC: <span>{$angles.elevation_degrees || '--'}</span></div>
 		<div>Distance: <span>{$distance.D || '--'}</span></div>
+	</div>
+	<div class="camera-selector">
+		<label for="camera-select" class="camera-label">Camera:</label>
+		<select 
+			id="camera-select" 
+			class="camera-select"
+			bind:value={selectedCameraId}
+			on:change={() => setSelectedCamera(selectedCameraId)}
+		>
+			{#each cameras as camera}
+				<option value={camera.id}>{camera.name}</option>
+			{/each}
+		</select>
 	</div>
 	<div class="stream-selector">
 		<button
@@ -924,6 +973,47 @@ newVertical = Math.max(ELEV_DOWN, Math.min(ELEV_UP, newVertical));
 		font-size: 1.1rem;
 		text-shadow: 0 0 10px var(--accent-color);
 		font-family: 'Courier New', monospace;
+	}
+
+	.camera-selector {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.camera-label {
+		font-size: 0.95rem;
+		color: var(--text-secondary);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.camera-select {
+		background: var(--secondary-bg);
+		color: var(--text-primary);
+		border: 2px solid var(--border-color);
+		border-radius: var(--border-radius);
+		padding: 0.75rem 1.25rem;
+		font-size: 1rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: var(--transition);
+		min-width: 200px;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		font-family: 'Courier New', monospace;
+	}
+
+	.camera-select:hover {
+		border-color: var(--accent-color);
+		box-shadow: 0 0 20px rgba(21, 105, 138, 0.1);
+	}
+
+	.camera-select:focus {
+		outline: none;
+		border-color: var(--accent-color);
+		box-shadow: 0 0 20px var(--accent-color);
 	}
 
 	.stream-selector {

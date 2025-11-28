@@ -3,9 +3,9 @@
 import grpc
 import warnings
 
-import apps.core.protos.camera_pb2 as camera__pb2
+from . import camera_pb2 as camera__pb2
 
-GRPC_GENERATED_VERSION = '1.70.0'
+GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + f' but the generated code in camera_pb2_grpc.py depends on'
+        + ' but the generated code in camera_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -82,6 +82,11 @@ class CameraServiceStub(object):
         self.SetPTZDirection = channel.unary_unary(
                 '/camera.CameraService/SetPTZDirection',
                 request_serializer=camera__pb2.SetPTZDirectionRequest.SerializeToString,
+                response_deserializer=camera__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.SetCameraConfig = channel.unary_unary(
+                '/camera.CameraService/SetCameraConfig',
+                request_serializer=camera__pb2.SetCameraConfigRequest.SerializeToString,
                 response_deserializer=camera__pb2.StatusResponse.FromString,
                 _registered_method=True)
 
@@ -149,6 +154,12 @@ class CameraServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SetCameraConfig(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_CameraServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -200,6 +211,11 @@ def add_CameraServiceServicer_to_server(servicer, server):
             'SetPTZDirection': grpc.unary_unary_rpc_method_handler(
                     servicer.SetPTZDirection,
                     request_deserializer=camera__pb2.SetPTZDirectionRequest.FromString,
+                    response_serializer=camera__pb2.StatusResponse.SerializeToString,
+            ),
+            'SetCameraConfig': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetCameraConfig,
+                    request_deserializer=camera__pb2.SetCameraConfigRequest.FromString,
                     response_serializer=camera__pb2.StatusResponse.SerializeToString,
             ),
     }
@@ -472,6 +488,33 @@ class CameraService(object):
             target,
             '/camera.CameraService/SetPTZDirection',
             camera__pb2.SetPTZDirectionRequest.SerializeToString,
+            camera__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetCameraConfig(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/camera.CameraService/SetCameraConfig',
+            camera__pb2.SetCameraConfigRequest.SerializeToString,
             camera__pb2.StatusResponse.FromString,
             options,
             channel_credentials,

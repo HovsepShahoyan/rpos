@@ -387,6 +387,31 @@ function setPTZDirection(call, callback) {
   }
 }
 
+function setCameraConfig(call, callback) {
+  try {
+    const { ip_address, port, ip_address_secondary, port_secondary } = call.request;
+    console.log('[DEBUG] gRPC server: setCameraConfig called with', {
+      ip_address, port, ip_address_secondary, port_secondary
+    });
+
+    const cameraConfig = {
+      ip_address,
+      port: parseInt(port),
+      ip_address_secondary: ip_address_secondary || ip_address,
+      port_secondary: parseInt(port_secondary) || 8888
+    };
+
+    cmdClient.setCameraConfig(cameraConfig);
+    callback(null, { success: true, message: 'Camera configuration set' });
+  } catch (error) {
+    console.error('Error in setCameraConfig:', error);
+    callback({
+      code: grpc.status.INTERNAL,
+      message: 'Internal server error',
+    });
+  }
+}
+
 // Create the gRPC server
 const grpcServer = new grpc.Server();
 
@@ -402,6 +427,7 @@ grpcServer.addService(cameraProto.CameraService.service, {
   GetPTZPosition: getPTZPosition,
   SendControl: sendControl,
   SetPTZDirection: setPTZDirection,
+  SetCameraConfig: setCameraConfig,
 });
 
 // Bind and start the gRPC server

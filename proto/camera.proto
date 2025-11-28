@@ -13,6 +13,7 @@ service CameraService {
   rpc GetPTZPosition (Empty) returns (PTZPositionResponse);
   rpc SendControl (SendControlRequest) returns (StatusResponse);
   rpc SetPTZDirection (SetPTZDirectionRequest) returns (StatusResponse);
+  rpc SetCameraConfig (SetCameraConfigRequest) returns (StatusResponse);
 }
 
 message Empty {}
@@ -75,4 +76,11 @@ message SendControlRequest {
 message SetPTZDirectionRequest {
   string direction = 1;
   bool start = 2;
+}
+
+message SetCameraConfigRequest {
+  string ip_address = 1;
+  string port = 2;
+  string ip_address_secondary = 3;
+  string port_secondary = 4;
 }

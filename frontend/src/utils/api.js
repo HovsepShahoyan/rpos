@@ -181,7 +181,7 @@ export async function setPTZDirection(direction, start) {
 
 export async function fetchCameras() {
 	console.log('[DEBUG] Frontend: Calling fetchCameras to Django');
-	const response = await fetch(`${API_BASE}/api/v1/cameras/`);
+	const response = await makeAuthenticatedRequest(`${API_BASE}/api/v1/cameras/`);
 	if (!response.ok) throw new Error('Failed to fetch cameras');
 	const data = await response.json();
 	console.log('[DEBUG] Frontend: Received cameras data:', data);
@@ -190,7 +190,7 @@ export async function fetchCameras() {
 
 export async function addCamera(cameraData) {
 	console.log('[DEBUG] Frontend: Calling addCamera to Django with data:', cameraData);
-	const response = await fetch(`${API_BASE}/api/v1/cameras/`, {
+	const response = await makeAuthenticatedRequest(`${API_BASE}/api/v1/cameras/`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(cameraData)
@@ -203,10 +203,23 @@ export async function addCamera(cameraData) {
 
 export async function deleteCamera(id) {
 	console.log('[DEBUG] Frontend: Calling deleteCamera to Django with id:', id);
-	const response = await fetch(`${API_BASE}/api/v1/cameras/${id}/`, {
+	const response = await makeAuthenticatedRequest(`${API_BASE}/api/v1/cameras/${id}/`, {
 		method: 'DELETE'
 	});
 	if (!response.ok) throw new Error('Failed to delete camera');
 	console.log('[DEBUG] Frontend: Camera deleted successfully');
 	return true;
+}
+
+export async function setCameraConfig(cameraId) {
+	console.log('[DEBUG] Frontend: Calling setCameraConfig to Django with cameraId:', cameraId);
+	const response = await fetch(`${API_BASE}/api/system/set_camera_config/`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ camera_id: cameraId })
+	});
+	if (!response.ok) throw new Error('Failed to set camera configuration');
+	const data = await response.json();
+	console.log('[DEBUG] Frontend: Received setCameraConfig response:', data);
+	return data;
 }
