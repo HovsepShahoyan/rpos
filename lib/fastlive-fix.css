@@ -1,0 +1,117 @@
+/* Fix for Fast Live tab speed settings border overflow issue */
+
+/* Container constraints for speed settings */
+.speed-controls,
+.speed-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+/* Speed button container */
+.speed-btn {
+    background: var(--input-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-base);
+    min-width: 30px;
+    max-width: 100%;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Prevent overflow in speed settings */
+.speed-btn:hover {
+    background: var(--accent-color);
+    color: var(--primary-bg);
+    transform: translateY(-1px);
+}
+
+/* Responsive speed buttons */
+@media (max-width: 768px) {
+    .speed-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .speed-row {
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    .speed-btn {
+        flex: 1;
+        min-width: 40px;
+        max-width: 60px;
+    }
+}
+
+/* Container for speed settings in Fast Live */
+.fast-live-speed-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+    align-items: center;
+    max-width: 100%;
+    padding: 0.5rem;
+    overflow: hidden;
+}
+
+/* Ensure numbers don't overflow */
+.fast-live-speed-btn {
+    display: inline-block;
+    min-width: 30px;
+    max-width: 50px;
+    padding: 0.25rem 0.5rem;
+    margin: 0.125rem;
+    text-align: center;
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
+    background: var(--input-bg);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.fast-live-speed-btn:hover {
+    background: var(--accent-color);
+    color: var(--primary-bg);
+    transform: translateY(-1px);
+}
+
+/* Grid layout for speed settings */
+.fast-live-speed-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(40px, 1fr));
+    gap: 0.25rem;
+    max-width: 100%;
+    padding: 0.25rem;
+}
+
+/* Responsive design for mobile */
+@media (max-width: 480px) {
+    .fast-live-speed-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+    
+    .fast-live-speed-btn {
+        font-size: 0.75rem;
+        padding: 0.125rem 0.25rem;
+    }
+}

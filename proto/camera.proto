@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package camera;
+
+service CameraService {
+  rpc GetTelemetry (Empty) returns (TelemetryResponse);
+  rpc MovePTZ (MovePTZRequest) returns (StatusResponse);
+  rpc SetZoom (SetZoomRequest) returns (StatusResponse);
+  rpc GetCurrentZoom (Empty) returns (ZoomResponse);
+  rpc SetSpeed (SetSpeedRequest) returns (StatusResponse);
+  rpc SetManualGps (ManualGpsRequest) returns (StatusResponse);
+  rpc GetCrossPositions (CrossPositionsRequest) returns (CrossPositionsResponse);
+  rpc GetPTZPosition (Empty) returns (PTZPositionResponse);
+  rpc SendControl (SendControlRequest) returns (StatusResponse);
+  rpc SetPTZDirection (SetPTZDirectionRequest) returns (StatusResponse);
+  rpc SetCameraConfig (SetCameraConfigRequest) returns (StatusResponse);
+}
+
+message Empty {}
+
+message TelemetryResponse {
+  string inclinoData = 1;
+  string gpsData = 2;
+  string stmdData = 3;
+  string movementData = 4;
+  string rangeData = 5;
+}
+
+message MovePTZRequest {
+  int32 azimuth = 1;
+  int32 elevation = 2;
+}
+
+message SetZoomRequest {
+  int32 level = 1;
+}
+
+message ZoomResponse {
+  int32 zoom = 1;
+}
+
+message SetSpeedRequest {
+  int32 speed = 1;
+}
+
+message ManualGpsRequest {
+  double latitude = 1;
+  double longitude = 2;
+}
+
+message CrossPositionsRequest {
+  int32 zoom = 1;
+}
+
+message CrossPositionsResponse {
+  int32 x = 1;
+  int32 y = 2;
+}
+
+message PTZPositionResponse {
+  int32 az = 1;
+  int32 el = 2;
+}
+
+message StatusResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message SendControlRequest {
+  string prop = 1;
+  string key = 2;
+  string value = 3;
+}
+
+message SetPTZDirectionRequest {
+  string direction = 1;
+  bool start = 2;
+}
+
+message SetCameraConfigRequest {
+  string ip_address = 1;
+  string port = 2;
+  string ip_address_secondary = 3;
+  string port_secondary = 4;
+}

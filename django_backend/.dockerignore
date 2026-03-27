@@ -1,0 +1,13 @@
+Dockerfile
+.docker
+.dockerignore
+
+**/__pycache__/
+src/app/staticfiles/
+
+*.pyc
+*.pyo
+*.pyd
+*.cover
+*.log
+.pytest_cache

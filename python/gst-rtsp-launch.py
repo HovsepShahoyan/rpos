@@ -58,6 +58,7 @@ gi.require_version('GstVideo','1.0')
 from gi.repository import GObject, Gst, Gio, GstVideo, GstRtspServer, GLib
 
 from threading import Thread, Lock
+from datetime import datetime
 cam_mutex = Lock()
 # -------------------
 def run_opencv_stream(mount_name, rtsp_url):
@@ -231,8 +232,71 @@ class StreamServer:
 
         factory.connect("media-configure", on_media_configure)
         return factory
+
+    def read_codec_config(self):
+        global global_codec
+        try:
+            if os.path.exists("/tmp/codec.json"):
+                with open("/tmp/codec.json", "r") as f:
+                    codec_data = json.load(f)
+                    codec_value = codec_data.get("codec", "h264").lower()
+                    if codec_value in ["h264", "h265", "mpeg"]:
+                        global_codec = codec_value
+                        log.info(f"Codec configuration loaded: {global_codec}")
+                    else:
+                        log.warning(f"Invalid codec in /tmp/codec.json: {codec_value}, using default: h264")
+                        global_codec = "h264"
+            else:
+                log.info("No codec configuration file found, using default: h264")
+                global_codec = "h264"
+        except Exception as e:
+            log.error(f"Error reading codec configuration: {e}")
+            global_codec = "h264"
     
-    def start_opencv_overlay_stream(self, mount_name, rtsp_input_url, overlay_path):
+    def _parse_resolution(res):
+        if res is None:
+            return None
+        try:
+            if isinstance(res, (list, tuple)) and len(res) >= 2:
+                return int(res[0]), int(res[1])
+            if isinstance(res, str):
+                parts = res.lower().strip().split("x")
+                if len(parts) == 2:
+                    return int(parts[0]), int(parts[1])
+        except Exception:
+            return None
+        return None
+
+    def read_resolution_config(self):
+        global global_resolution
+        cfg = "/tmp/resolution.json"
+        try:
+            if os.path.exists(cfg):
+                with open(cfg, "r") as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and "width" in data and "height" in data:
+                    try:
+                        w = int(data["width"])
+                        h = int(data["height"])
+                        # sanity bounds (optional; adjust if you want)
+                        if 1 <= w <= 7680 and 1 <= h <= 4320:
+                            global_resolution = (w, h)
+                            log.info(f"Resolution configuration loaded: {global_resolution}")
+                            return
+                        else:
+                            log.warning(f"Resolution values out of bounds in {cfg}: {(w,h)}; ignoring.")
+                    except Exception as e:
+                        log.warning(f"Invalid width/height types in {cfg}: {e}; ignoring.")
+                else:
+                    log.warning(f"Invalid format for {cfg}; expected {{'width':W,'height':H}}")
+            else:
+                log.info("No resolution configuration file found, using defaults")
+        except Exception as e:
+            log.error(f"Error reading resolution configuration: {e}")
+        global_resolution = None
+
+        
+    def start_opencv_overlay_stream(self, mount_name, rtsp_input_url, overlay_path, pip_source=None):
         import cv2
         import numpy as np
         import os
@@ -241,69 +305,90 @@ class StreamServer:
         import time
         from gi.repository import Gst, GstRtspServer
 
+        global global_codec, global_resolution
+
+        self.read_codec_config()
+        try:
+            self.read_resolution_config()
+        except Exception:
+            global_resolution = None
+
         log.debug(f"[DEBUG] Starting OpenCV overlay stream for mount: {mount_name}")
         log.debug(f"[DEBUG] RTSP input URL: {rtsp_input_url}")
         log.debug(f"[DEBUG] Overlay path: {overlay_path}")
+        log.debug(f"[DEBUG] runtime config -> codec: {global_codec}, resolution(file): {global_resolution}")
 
-        if mount_name == "stream":
-            gst_pipeline = (
-                f'rtspsrc location={rtsp_input_url} latency=0 ! '
-                f'rtph264depay ! h264parse ! nvv4l2decoder ! '
-                f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
-                f'nvvidconv ! video/x-raw, format=BGRx, width=1350, height=1080 !'
-                f'appsink drop=true max-buffers=3 sync=false'
-            )
+        Gst.init(None)
+
+        default_w, default_h = 1920, 1080
+        if isinstance(global_resolution, tuple) and len(global_resolution) == 2:
+            out_w, out_h = int(global_resolution[0]), int(global_resolution[1])
         else:
-            gst_pipeline = (
-                f'rtspsrc location={rtsp_input_url} latency=0 ! '
-                f'rtph264depay ! h264parse ! nvv4l2decoder ! '
-                f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
-                f'nvvidconv ! video/x-raw, format=BGRx ! '
-                f'appsink drop=true max-buffers=3 sync=false'
-            )
+            out_w, out_h = default_w, default_h
 
+        decode_req_w, decode_req_h = out_w, out_h
+        appsrc_w, appsrc_h = out_w, out_h
+        use_videobox = False
+
+        decode_caps_part = ""
+        if decode_req_w and decode_req_h:
+            decode_caps_part = f", width={int(decode_req_w)}, height={int(decode_req_h)}"
+
+        gst_pipeline = (
+            f'rtspsrc location={rtsp_input_url} protocols=tcp  latency=0 ! '
+            f'rtph264depay ! h264parse ! nvv4l2decoder ! '
+            f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
+            f'nvvidconv ! video/x-raw, format=BGRx{decode_caps_part} ! '
+            f'appsink drop=true max-buffers=3 sync=false'
+        )
+
+        log.debug(f"[DEBUG] Using H.264 input pipeline: {gst_pipeline}")
         cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+        if not cap or not cap.isOpened():
+            log.error(f"[ERROR] Cannot open H.264 RTSP stream: {rtsp_input_url}")
+            raise Exception(f"[ERROR] Cannot open H.264 RTSP stream: {rtsp_input_url}")
 
-        if not cap.isOpened():
-            log.error(f"[ERROR] Cannot open RTSP stream: {rtsp_input_url}")
-            raise Exception(f"[ERROR] Cannot open RTSP stream: {rtsp_input_url}")
-        log.debug(f"[DEBUG] Successfully opened RTSP stream: {rtsp_input_url}")
+        cap_stream_raw = None                
+        last_pip_open_attempt = 0.0
+        pip_open_backoff = 2.0
 
-        # Get video properties
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        if mount_name == "altstream":
-            width = 1920
-            height = 1080
-        elif mount_name == "stream":
-            width = 1350
-            height = 1080
+        log.debug(f"[DEBUG] Successfully opened H.264 RTSP stream: {rtsp_input_url}")
 
-        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25  # Target FPS
+        actual_cap_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or appsrc_w
+        actual_cap_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or appsrc_h
 
-        log.debug(f"[DEBUG] Camera resolution: {width}x{height}, FPS: {fps}")
+        width = actual_cap_w
+        height = actual_cap_h
 
-        if mount_name == "stream": 
-            pipeline_str = (
-                f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
-                f"latency=0 sync=false "
-                f"! video/x-raw,format=BGRx,width=1350,height=1080,framerate={fps}/1 "
-                f"! videobox left=-285 right=-285 border-alpha=0 "
-                f"! video/x-raw,width=1920,height=1080 "
+
+        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 25
+        log.debug(f"[DEBUG] Camera resolution (used): {width}x{height}, FPS: {fps}; output canvas: {out_w}x{out_h}")
+
+        videobox_part = ""
+  
+        if width != out_w or height != out_h:
+            videobox_part = f"! video/x-raw,width={out_w},height={out_h} "
+        appsrc_caps = f"video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1"
+
+        if global_codec == "h265":
+            encoder_segment = (
                 f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
-                f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
-                f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
-                f"profile=baseline iframeinterval=25 bitrate=4096000 tune=zerolatency "
-                f"insert-sps-pps=1 "
-                f"! h264parse "
-                f"! rtph264pay name=pay0 pt=96 config-interval=0"
+                f"! nvv4l2h265enc preset-level=MediumPreset bitrate=8000000 "
+                f"control-rate=variable-bitrate iframeinterval=30 insert-sps-pps=1 "
+                f"insert-vui=1 insert-aud=1 "
+                f"! h265parse config-interval=1 "
+                f"! rtph265pay name=pay0 pt=96 config-interval=1 mtu=1400"
+            )
+        elif global_codec == "mpeg":
+            encoder_segment = (
+                f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12 "
+                f"! nvv4l2mpeg4enc bitrate=8000000 iframeinterval=30 "
+                f"control-rate=variable-bitrate preset-level=MediumPreset "
+                f"! mpeg4videoparse "
+                f"! rtpmp4vpay name=pay0 pt=96 config-interval=1 mtu=1400"
             )
         else:
-            pipeline_str = (
-                f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
-                f"latency=0 sync=false "
-                f"! video/x-raw,format=BGRx,width={width},height={height},framerate={fps}/1 "
-                f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
+            encoder_segment = (
                 f"! nvvidconv ! video/x-raw(memory:NVMM),format=NV12,framerate={fps}/1 "
                 f"! nvv4l2h264enc control-rate=constant-bitrate preset-level=UltraFastPreset "
                 f"profile=baseline iframeinterval=25 bitrate=4096000 tune=zerolatency "
@@ -312,23 +397,48 @@ class StreamServer:
                 f"! rtph264pay name=pay0 pt=96 config-interval=0"
             )
 
+        if mount_name == "stream":
+            pipeline_str = (
+                f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
+                f"latency=0 sync=false "
+                f"caps={appsrc_caps} "
+                f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
+                f"{videobox_part}"
+                f"{encoder_segment}"
+            )
+        else:
+            pipeline_str = (
+                f"appsrc name=source block=true is-live=true do-timestamp=true format=time "
+                f"latency=0 sync=false "
+                f"caps={appsrc_caps} "
+                f"! queue max-size-buffers=1 max-size-time=10000 leaky=downstream "
+                f"{encoder_segment}"
+            )
+
         log.debug(f"[DEBUG] GStreamer pipeline: {pipeline_str}")
 
-        # Create and configure the media factory
         factory = GstRtspServer.RTSPMediaFactory()
         factory.set_launch(pipeline_str)
         factory.set_shared(True)
         log.debug(f"[DEBUG] Successfully created and configured GStreamer media factory")
 
-        # Define paths for overlay data
         coords_path = f"/tmp/overlay_coords1.json" if mount_name == "stream" else f"/tmp/overlay_coords2.json"
         gps_path = "/tmp/overlay_coords.json"
         angles_path = "/tmp/overlay_angles.json"
         hyusis_path = "/tmp/overlay_hyusis.json"
         distance_path = "/tmp/overlay_distance.json"
+        menu_path = "/tmp/menu_overlay.json"
+        menu_input_path = "/tmp/menu_input.json"
+        network_path = "/tmp/network.json"
+        network_input_path = "/tmp/network_numpad.json"
+        presets_path     = "/tmp/presets.json"
+        presets_numpad_path = "/tmp/presets_numpad.json"
+        screenshot_path = "/tmp/screenshot_flag.json"
+        move_to_target_path = "/tmp/move_to_target.json"
+        move_numpad_path = "/tmp/move_numpad.json"
+        pip_toggle_path = "/tmp/pip_toggle.json"
         log.debug(f"[DEBUG] Overlay data paths: {coords_path}, {gps_path}, {angles_path}, {hyusis_path}")
 
-        # Initialize overlay data
         overlay_data = {
             "x": None,
             "y": None,
@@ -341,37 +451,250 @@ class StreamServer:
             "delta_x": 0,
             "delta_y": 0,
             "flag": 0,
-            "D": 0
+            "menu_flag": 0,
+            "D": 0,
+            "field1Flag": 0,
+            "field2Flag": 0,    
+            "field1_value": "0",
+            "field2_value": "0",
+            "network_flag": 0, 
+            "active_network_field": "ip_address",
+            "ip_address": "0.0.0.0",
+            "subnet_mask": "0.0.0.0",
+            "gateway": "0.0.0.0",
+            "DNS1": "0.0.0.0",
+            "DNS2": "0.0.0.0",
+            "numpad_flag": 0,
+            "presets_flag":      0,
+            "add_marker_flag":   0,
+            "delete_marker_flag":0,
+            "current_preset_index": 0,
+            "marker_name":       "",
+            "markers":           [""] * 10,
+            "screenshot_flag": 0,
+            "move_to_target_flag": 0,
+            "move_target_x": "0",
+            "move_target_y": "0", 
+            "move_target_height": "0",
+            "active_move_field": None,
+            "move_numpad_flag": 0,
+            "nc_xy_mode": 0,
+            "nc_x_value": "0",
+            "nc_y_value": "0",
+            "pip_visible": 0,
         }
 
         log.debug(f"[DEBUG] Initialized overlay data: {overlay_data}")
 
-        # Preload overlay image with size adjustment for "stream"
         overlay = None
         if os.path.exists(overlay_path):
             overlay = cv2.imread(overlay_path, cv2.IMREAD_UNCHANGED)
             if overlay is not None and overlay.shape[2] == 4:
                 log.debug(f"[DEBUG] Successfully preloaded overlay image: {overlay_path}")
 
-        # File watcher thread with improved timing
+        onvif_time_str = ""
+
         def file_watcher():
             nonlocal overlay
             last_overlay_mtime = 0
+            last_menu_mtime = 0  
             last_coords_mtime = 0
+            last_network_mtime = 0
             while True:
                 try:
-                    # Check if the overlay file has been modified
+                    if os.path.exists(pip_toggle_path):
+                        with open(pip_toggle_path, "r") as f:
+                            pip_cfg = json.load(f)
+                        try:
+                            overlay_data["pip_visible"] = int(pip_cfg.get("pip_visible", overlay_data.get("pip_visible", 0)))
+                        except Exception:
+                            val = pip_cfg.get("pip_visible", overlay_data.get("pip_visible", 0))
+                            overlay_data["pip_visible"] = 1 if str(val).strip().lower() in ("1", "true", "yes") else 0
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read pip_toggle.json: {e}")
+
+                try:
+                    if os.path.exists(move_to_target_path):
+                        with open(move_to_target_path, "r") as f:
+                            move_data = json.load(f)
+                            overlay_data["move_to_target_flag"] = int(move_data.get("move_to_target_flag", 0))
+                            overlay_data["active_move_field"] = move_data.get("active_field", None)
+                            overlay_data["move_target_x"] = str(move_data.get("x", "0"))
+                            overlay_data["move_target_y"] = str(move_data.get("y", "0"))
+                            overlay_data["move_target_height"] = str(move_data.get("height", "0"))
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read move to target data: {e}")
+
+                try:
+                    if os.path.exists(move_numpad_path):
+                        with open(move_numpad_path, "r") as f:
+                            pad = json.load(f)
+                            overlay_data["move_numpad_flag"] = int(pad.get("numpad_flag", 0))
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read move numpad data: {e}")
+
+                try:
+                    if os.path.exists(screenshot_path):
+                        with open(screenshot_path, "r") as f:
+                            shot = json.load(f)
+                            overlay_data["screenshot_flag"] = int(shot.get("screenshot_flag", 0))
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read screenshot flag: {e}")
+
+                try:
+                    if os.path.exists(presets_path):
+                        with open(presets_path, "r") as f:
+                            p = json.load(f)
+                        overlay_data["presets_flag"] = int(p.get("presets_flag", 0))
+                        overlay_data["current_preset_index"] = int(p.get("current_preset_index", 0))
+                        overlay_data["add_marker_flag"] = int(p.get("add_marker_flag", 0))
+                        overlay_data["delete_marker_flag"] = int(p.get("delete_marker_flag", 0))
+                        overlay_data["markers"] = p.get("markers", [""] * 10)
+                        if overlay_data["add_marker_flag"] == 1:
+                            overlay_data["marker_name"] = ""
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read presets: {e}")
+
+
+                onvif_time_path = "/tmp/onvif_time.json"
+                nonlocal onvif_time_str
+                try:
+                    if os.path.exists(onvif_time_path):
+                        with open(onvif_time_path, "r") as f:
+                            onvif_time_data = json.load(f)
+                        onvif_time_str = f"{onvif_time_data.get('local', '')} {onvif_time_data.get('timezone', '')}"
+                except Exception as e:
+                    onvif_time_str = "ONVIF time unavailable"
+
+                try:
+                    if overlay_data.get("add_marker_flag", 0) == 1 and os.path.exists(presets_numpad_path):
+                        with open(presets_numpad_path, "r") as f:
+                            pad = json.load(f)
+                        flag = int(pad.get("numpad_flag", 0))
+                        digit = str(pad.get("digit", ""))
+                        if flag == 1:
+                            if digit == "C":
+                                overlay_data["marker_name"] = ""
+                            elif digit == "OK":
+                                idx = overlay_data["current_preset_index"]
+                                overlay_data["markers"][idx] = overlay_data["marker_name"]
+                                overlay_data["marker_name"] = ""
+                                overlay_data["add_marker_flag"] = 0
+                                with open(presets_path, "w") as pf:
+                                    json.dump({
+                                        "presets_flag": overlay_data["presets_flag"],
+                                        "current_preset_index": overlay_data["current_preset_index"],
+                                        "add_marker_flag": overlay_data["add_marker_flag"],
+                                        "delete_marker_flag": overlay_data["delete_marker_flag"],
+                                        "markers": overlay_data["markers"],
+                                    }, pf)
+                            else:
+                                overlay_data["marker_name"] += digit
+
+                            with open(presets_path, "w") as pf:
+                                json.dump({
+                                    "presets_flag":         overlay_data["presets_flag"],
+                                    "current_preset_index": overlay_data["current_preset_index"],
+                                    "add_marker_flag":      overlay_data["add_marker_flag"],
+                                    "delete_marker_flag":   overlay_data["delete_marker_flag"],
+                                    "markers":              overlay_data["markers"],
+                                    "marker_name":          overlay_data["marker_name"]
+                                }, pf, indent=2)
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] presets numpad error: {e}")
+
+                try:
+                    presets_positions_path = "/tmp/presets_positions.json"
+                    if os.path.exists(presets_positions_path):
+                        with open(presets_positions_path, "r") as f:
+                            pos_data = json.load(f)
+                        positions = [{"x": None, "y": None} for _ in range(10)]
+                        for idx_str, entry in pos_data.items():
+                            idx = int(idx_str)
+                            if 0 <= idx < 10:
+                                positions[idx] = {
+                                    "x": int(entry.get("X", 0)),
+                                    "y": int(entry.get("Y", 0))
+                                }
+                        overlay_data["presets_positions"] = positions
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read presets_positions: {e}")
+
+                try:
+                    if os.path.exists(network_path):
+                        current_network_mtime = os.path.getmtime(network_path)
+                        if current_network_mtime != last_network_mtime:
+                            last_network_mtime = current_network_mtime
+                            with open(network_path, "r") as f:
+                                net_data = json.load(f)
+                                overlay_data["network_flag"]        = int(net_data.get("network_flag", 0))
+                                overlay_data["active_network_field"] = net_data.get("activeField", None)
+                                overlay_data["ip_address"]   = str(net_data.get("ip_address", "0.0.0.0"))
+                                overlay_data["subnet_mask"]  = str(net_data.get("subnet_mask", "0.0.0.0"))
+                                overlay_data["gateway"]      = str(net_data.get("gateway", "0.0.0.0"))
+                                overlay_data["DNS1"]         = str(net_data.get("DNS1", "0.0.0.0"))
+                                overlay_data["DNS2"]         = str(net_data.get("DNS2", "0.0.0.0"))
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read network data: {e}")
+
+                try:
+                    if os.path.exists(network_input_path):
+                        with open(network_input_path, "r") as f:
+                            pad = json.load(f)
+                            overlay_data["numpad_flag"] = int(pad.get("numpad_flag", 0))
+                            pressed = pad.get("digit", "")
+                            if overlay_data["numpad_flag"] == 1 and overlay_data["active_network_field"]:
+                                fld = overlay_data["active_network_field"]
+                                cur = overlay_data.get(fld, "")
+                                if pressed == "C":
+                                    overlay_data[fld] = ""
+                                elif pressed == "OK":
+                                    overlay_data["numpad_flag"] = 0
+                                else:
+                                    if cur == "":
+                                        overlay_data[fld] = str(pressed)
+                                    else:
+                                        overlay_data[fld] = cur + str(pressed)
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read network numpad data: {e}")
+
+                time.sleep(0.05)
+
+                try:
+                    if os.path.exists(menu_input_path):
+                        with open(menu_input_path, "r") as f:
+                            input_data = json.load(f)
+                            overlay_data["field1Flag"] = int(input_data.get("field1Flag", 0))
+                            overlay_data["field2Flag"] = int(input_data.get("field2Flag", 0))
+                            overlay_data["field1_value"] = str(input_data.get("field1_value", "0"))
+                            overlay_data["field2_value"] = str(input_data.get("field2_value", "0"))
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read menu input: {e}")
+                    
+                try:
+                    if os.path.exists(menu_path):
+                        current_menu_mtime = os.path.getmtime(menu_path)
+                        if current_menu_mtime != last_menu_mtime:
+                            last_menu_mtime = current_menu_mtime
+                            with open(menu_path, "r") as f:
+                                menu_data = json.load(f)
+                                overlay_data["menu_flag"] = int(menu_data.get("Flag", 0))
+                                overlay_data["nc_xy_mode"] = int(menu_data.get("nc_xy_mode", 0))
+                                overlay_data["nc_x_value"] = str(menu_data.get("nc_x_value", "0"))
+                                overlay_data["nc_y_value"] = str(menu_data.get("nc_y_value", "0"))
+                except Exception as e:
+                    log.warning(f"[Overlay Watcher] Failed to read menu overlay data: {e}")
+
+                try:
                     if os.path.exists(overlay_path):
                         current_mtime = os.path.getmtime(overlay_path)
                         if current_mtime != last_overlay_mtime:
                             last_overlay_mtime = current_mtime
-                            # Reload the overlay image
                             overlay = cv2.imread(overlay_path, cv2.IMREAD_UNCHANGED)
                             log.debug(f"[DEBUG] Reloaded overlay image: {overlay_path}")
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to reload overlay image: {e}")
 
-                # Check crosshair coordinates
                 try:
                     if os.path.exists(coords_path):
                         current_coords_mtime = os.path.getmtime(coords_path)
@@ -389,7 +712,6 @@ class StreamServer:
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to reload crosshair coordinates: {e}")
 
-                # Check other files...
                 try:
                     if os.path.exists(gps_path):
                         with open(gps_path, "r") as f:
@@ -428,26 +750,36 @@ class StreamServer:
                 except Exception as e:
                     log.warning(f"[Overlay Watcher] Failed to read Hyusis data: {e}")
 
-                time.sleep(0.05)  # Adjusted for better performance
+                time.sleep(0.05)
 
         watcher_thread = threading.Thread(target=file_watcher, daemon=True)
         watcher_thread.start()
 
-        # Media configuration callback with optimizations
         def on_configure(factory, media):
             appsrc = media.get_element().get_child_by_name("source")
             frame_count = 0
             processing_times = []
             last_push_time = time.time()
+            last_network_mtime = 0   #
             lock = threading.Lock()
+            
+            screenshot_img = None
+            screenshot_img_path = "/home/jetson/rpos/scripts/r.jpg"
+            if os.path.exists(screenshot_img_path):
+                screenshot_img = cv2.imread(screenshot_img_path, cv2.IMREAD_UNCHANGED)
+
+            netowork_config_img = None
+            network_config_img_path = "/home/jetson/rpos/scripts/eth.jpg"
+            if os.path.exists(network_config_img_path):
+                netowork_config_img = cv2.imread(network_config_img_path, cv2.IMREAD_UNCHANGED)
 
             def push_frame(_appsrc, _):
-                nonlocal frame_count, last_push_time, cap, overlay
+                nonlocal frame_count, last_push_time, cap, overlay, cap_stream_raw, last_pip_open_attempt
+
                 start_time = time.time()
 
-                # Grab frame with improved retry logic
                 retry_counter = 0
-                while retry_counter < 3:  # Reduced retries for lower latency
+                while retry_counter < 3:
                     ret, frame = cap.read()
                     if ret and frame is not None:
                         break
@@ -458,26 +790,24 @@ class StreamServer:
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     time.sleep(0.001)
 
+                if frame.shape[1] != 1920 or frame.shape[0] != 1080:
+                    frame = cv2.resize(frame, (1920, 1080), interpolation=cv2.INTER_LINEAR)
+
                 if not ret or frame is None:
                     log.error("[Overlay] Failed to grab frame after retries")
                     return
 
-                # Calculate processing time
                 processing_time = time.time() - start_time
                 processing_times.append(processing_time)
 
-                # Calculate FPS
                 if len(processing_times) > 10:
                     avg_pt = sum(processing_times) / len(processing_times)
                     fps_estimate = 1 / avg_pt
-                    # log.info(f"[INFO] Estimated FPS: {fps_estimate:.2f}")
                     processing_times.pop(0)
 
-                # Apply overlay if available
                 if overlay is not None:
                     h, w = frame.shape[:2]
                     
-                    # Original resolution (based on mount_name)
                     if mount_name == "stream":
                         original_width = 1350
                         original_height = 1080
@@ -485,19 +815,14 @@ class StreamServer:
                         original_width = 1920
                         original_height = 1080
                     
-                    # Calculate scaling factors
                     scale_x = w / original_width
                     scale_y = h / original_height
 
-                    # Get crosshair coordinates from overlay_data
                     x1 = overlay_data["x"] if overlay_data["x"] is not None else int(original_width // 2)
                     y1 = overlay_data["y"] if overlay_data["y"] is not None else int(original_height // 2)
 
-                    # Scale coordinates to match the processed frame size
                     if mount_name == "stream":
-                        # Scale x coordinate
                         x1_scaled = int(x1 * (1350 / 1920))
-                        # Scale y coordinate
                         y1_scaled = int(y1 * (1080 / 1080))
                         x1, y1 = x1_scaled, y1_scaled
                     else:
@@ -511,6 +836,194 @@ class StreamServer:
                     x2 = min(w, x1c + ow)
                     y2 = min(h, y1c + oh)
 
+                if pip_source and overlay_data.get("pip_visible", 0) == 1:
+                    try:
+                        if (cap_stream_raw is None or not cap_stream_raw.isOpened()) and (time.time() - last_pip_open_attempt) > pip_open_backoff:
+                            last_pip_open_attempt = time.time()
+                            pip_gst = (
+                                f'rtspsrc location={pip_source}  protocols=tcp  latency=0 ! '
+                                f'rtph264depay ! h264parse ! nvv4l2decoder ! '
+                                f'queue max-size-buffers=3 leaky=downstream ! '
+                                f'nvvidconv ! video/x-raw,format=BGRx ! appsink drop=true max-buffers=2 sync=false'
+                            )
+                            try:
+                                cap_stream_raw = cv2.VideoCapture(pip_gst, cv2.CAP_GSTREAMER)
+                                cap_stream_raw.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                                if not cap_stream_raw.isOpened():
+                                    log.warning("[PIP] cap_stream_raw not opened after attempt")
+                                    try: cap_stream_raw.release()
+                                    except: pass
+                                    cap_stream_raw = None
+                            except Exception as e:
+                                log.warning(f"[PIP] exception when opening pip_source: {e}")
+                                cap_stream_raw = None
+
+                        if cap_stream_raw is not None and cap_stream_raw.isOpened():
+                            ret2, raw_stream_frame = cap_stream_raw.read()
+                            if not ret2 or raw_stream_frame is None:
+                                try: cap_stream_raw.release()
+                                except: pass
+                                cap_stream_raw = None
+                            else:
+                                if mount_name == "altstream":
+                                    pip_h, pip_w = 300, 400 
+                                else:
+                                    pip_h, pip_w = 300, 400 
+
+                                try:
+                                    pip_frame = cv2.resize(raw_stream_frame, (pip_w, pip_h))
+                                    x_offset = frame.shape[1] - pip_w - 10
+                                    y_offset = 10
+                                    frame[y_offset:y_offset+pip_h, x_offset:x_offset+pip_w] = pip_frame
+                                except Exception as e:
+                                    log.warning(f"[PIP] failed to paste/resize pip frame: {e}")
+
+                    except Exception as e:
+                        log.warning(f"[PIP] unexpected error: {e}")
+                        try:
+                            if cap_stream_raw is not None:
+                                cap_stream_raw.release()
+                        except:
+                            pass
+                        cap_stream_raw = None
+
+                digital_zoom_path = "/tmp/digital_zoom.json"
+                digital_zoom = 1.0
+                zoom_changed = False
+                try:
+                    dz_data = {"zoom": 1.0, "zoom_in_flag": 0, "zoom_out_flag": 0}
+                    if os.path.exists(digital_zoom_path):
+                        with open(digital_zoom_path, "r") as f:
+                            dz_data = json.load(f)
+                    digital_zoom = float(dz_data.get("zoom", 1.0))
+                    zoom_in_flag = int(dz_data.get("zoom_in_flag", 0))
+                    zoom_out_flag = int(dz_data.get("zoom_out_flag", 0))
+                    if zoom_in_flag == 1:
+                        digital_zoom = min(8.0, digital_zoom + 0.2)
+                        dz_data["zoom_in_flag"] = 0
+                        zoom_changed = True
+                    if zoom_out_flag == 1:
+                        digital_zoom = max(1.0, digital_zoom - 0.2)
+                        dz_data["zoom_out_flag"] = 0
+                        zoom_changed = True
+                    if zoom_changed:
+                        with open(digital_zoom_path, "w") as f:
+                            json.dump(dz_data, f)
+                except Exception as e:
+                    log.warning(f"[DigitalZoom] Failed to read/update digital zoom: {e}")
+                    digital_zoom = 1.0
+
+                h, w = frame.shape[:2]
+                if digital_zoom > 1.01:
+                    cx = overlay_data["x"] if overlay_data["x"] is not None else w // 2
+                    cy = overlay_data["y"] if overlay_data["y"] is not None else h // 2
+                    crop_w = int(w / digital_zoom)
+                    crop_h = int(h / digital_zoom)
+                    x1 = max(0, min(w - crop_w, cx - crop_w // 2))
+                    y1 = max(0, min(h - crop_h, cy - crop_h // 2))
+                    x2 = x1 + crop_w
+                    y2 = y1 + crop_h
+                    cropped = frame[y1:y2, x1:x2]
+                    frame = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
+
+                DARK_GREEN        = (128, 128, 0)
+                MEDIUM_GREEN      = (208, 224, 64)
+                WHITE             = (255, 255, 255)
+                BLACK             = (0, 0, 0)
+
+                h, w = frame.shape[:2]
+
+                if onvif_time_str:
+                    h, w = frame.shape[:2]
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    font_scale = 1.0
+                    thickness = 2
+                    (tw, th), _ = cv2.getTextSize(onvif_time_str, font, font_scale, thickness)
+                    x = 15
+                    y = 40
+
+                    cv2.putText(frame, onvif_time_str, (x, y), font, font_scale, BLACK, 3, cv2.LINE_AA)
+                    cv2.putText(frame, onvif_time_str, (x, y), font, font_scale, DARK_GREEN, 2, cv2.LINE_AA)
+
+                camera_coords_label = "Camera Coordinates"
+                cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
+                cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
+                coords_label = f"X: {overlay_data['gps_x']}, Y: {overlay_data['gps_y']}"
+                cv2.putText(frame, coords_label, (w - 550, h - 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 3, cv2.LINE_AA)
+                cv2.putText(frame, coords_label, (w - 550, h - 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 2, cv2.LINE_AA)
+
+                target_label = "Target"
+                cv2.putText(frame, target_label, (20, 150),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
+                cv2.putText(frame, target_label, (20, 150),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
+
+                delta_x_label = f"X: {overlay_data['delta_x']}"
+                cv2.putText(frame, delta_x_label, (20, 200),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
+                cv2.putText(frame, delta_x_label, (20, 200),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
+
+                delta_y_label = f"Y: {overlay_data['delta_y']}"
+                cv2.putText(frame, delta_y_label, (20, 250),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
+                cv2.putText(frame, delta_y_label, (20, 250),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
+
+                distance_label = f"Distance: {overlay_data['D']}"
+                cv2.putText(frame, distance_label, (20, 300),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
+                cv2.putText(frame, distance_label, (20, 300),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
+                h, w = frame.shape[:2]
+
+                camera_coords_label = "Camera Coordinates"
+                cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
+                cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
+                coords_label = f"X: {overlay_data['gps_x']}, Y: {overlay_data['gps_y']}"
+                cv2.putText(frame, coords_label, (w - 550, h - 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
+                cv2.putText(frame, coords_label, (w - 550, h - 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
+
+                angle_label = (
+                    f"AngleD: {overlay_data['az_a']} ({overlay_data['az_d_s']})   "
+                    f"MestoC: {overlay_data['el_a']} ({overlay_data['el_d_s']})"
+                )
+                cv2.putText(frame, angle_label, (w // 2 - 300, 35),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, BLACK, 3, cv2.LINE_AA)
+                cv2.putText(frame, angle_label, (w // 2 - 300, 35),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, DARK_GREEN, 2, cv2.LINE_AA)
+
+                DARK_TURQUOISE   = (128, 128, 0)  
+                MEDIUM_TURQUOISE = (208, 224, 64) 
+                WHITE            = (255, 255, 255)
+
+                h, w = frame.shape[:2]
+
+                rect_width = 80
+                rect_height = 40
+                bottom_offset = 20
+                horizontal_spacing = 100
+
+                button1_top_left_x = (w - rect_width) // 2 - 400
+                button1_top_left_y = h - rect_height - bottom_offset
+
+                if overlay is not None:
+                    h, w = frame.shape[:2]
+                    cx = overlay_data["x"] if overlay_data["x"] is not None else w // 2
+                    cy = overlay_data["y"] if overlay_data["y"] is not None else h // 2
+                    oh, ow = overlay.shape[:2]
+                    x1c = max(0, cx - ow // 2)
+                    y1c = max(0, cy - oh // 2)
+                    x2 = min(w, x1c + ow)
+                    y2 = min(h, y1c + oh)
                     if x2 > x1c and y2 > y1c:
                         crop = overlay[0:(y2 - y1c), 0:(x2 - x1c)]
                         alpha = crop[:, :, 3] / 255.0
@@ -519,70 +1032,1173 @@ class StreamServer:
                                 alpha * crop[:, :, c] +
                                 (1 - alpha) * frame[y1c:y2, x1c:x2, c]
                             )
+                            
+                dz_size    = 60
+                dz_spacing = 15
+                margin     = 10
+                dz_x       = margin + dz_size // 2
+                frame_cy   = h // 2
 
-                # ... rest of the code remains the same ...
-                # Draw text overlays with improved efficiency
+                minus_cy = frame_cy - dz_size - dz_spacing
+                zoom_cy  = frame_cy
+                plus_cy  = frame_cy + dz_size + dz_spacing
 
-                h, w = frame.shape[:2]
+                def draw_square_button(cx, cy, label, font_scale, font_thickness, text_color):
+                    half = dz_size // 2
 
-                # 1. Camera Coordinates (X and Y) - Yellow, Top-Right
-                camera_coords_label = "Camera Coordinates"
-                cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                cv2.putText(frame, camera_coords_label, (w - 550, h - 70),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
-                coords_label = f"X: {overlay_data['gps_x']}, Y: {overlay_data['gps_y']}"
-                cv2.putText(frame, coords_label, (w - 550, h - 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                cv2.putText(frame, coords_label, (w - 550, h - 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
+                    x0 = int(cx - half)
+                    y0 = int(cy - half)
+                    x0 = max(0, x0)                 
+                    y0 = max(0, y0)                    
+                    x1 = x0 + dz_size
+                    y1 = y0 + dz_size
 
-                # 2. Target Label - Red, Top-Left
-                target_label = "Target"
-                cv2.putText(frame, target_label, (30, 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                cv2.putText(frame, target_label, (30, 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+                    cv2.rectangle(frame, (x0, y0), (x1, y1), DARK_TURQUOISE, -1)
+                    cv2.rectangle(frame, (x0, y0), (x1, y1), MEDIUM_TURQUOISE, 2)
 
-                # 3. Delta X - Blue, Below Target
-                delta_x_label = f"X: {overlay_data['delta_x']}"
-                cv2.putText(frame, delta_x_label, (30, 100),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                cv2.putText(frame, delta_x_label, (30, 100),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+                    # measure text
+                    (tw, th), baseline = cv2.getTextSize(label,
+                                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                                        font_scale,
+                                                        font_thickness)
 
-                # 4. Delta Y - Blue, Below Delta X
-                delta_y_label = f"Y: {overlay_data['delta_y']}"
-                cv2.putText(frame, delta_y_label, (30, 150),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                cv2.putText(frame, delta_y_label, (30, 150),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+                    tx = x0 + (dz_size - tw) // 2
+                    ty = y0 + (dz_size + th) // 2 - baseline // 2
 
-                # 5. Distance - Blue, Top-Left
-                distance_label = f"Distance: {overlay_data['D']}"
-                cv2.putText(frame, distance_label, (30, 200),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                cv2.putText(frame, distance_label, (30, 200),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+                    cv2.putText(frame, label, (tx, ty),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                font_scale,
+                                text_color,
+                                font_thickness,
+                                cv2.LINE_AA)
 
-                # 6. Azimuth and Elevation (Az and El) - Green, Top-Middle
-                angle_label = f"AngleD: {overlay_data['az_a']} ({overlay_data['az_d_s']}°)   MestoC: {overlay_data['el_a']} ({overlay_data['el_d_s']}°)"
-                cv2.putText(frame, angle_label, (w//2 - 200, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3, cv2.LINE_AA)
-                cv2.putText(frame, angle_label, (w//2 - 200, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+                draw_square_button(dz_x, minus_cy, "-",    font_scale=1.5, font_thickness=3, text_color=WHITE)
+                draw_square_button(dz_x, plus_cy,  "+",    font_scale=1.5, font_thickness=3, text_color=WHITE)
 
-                # Convert frame to GStreamer buffer with improved handling
-                #frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+                zoom_label = f"x{digital_zoom:.2f}"
+                fs = 1.2
+                (thw, thh), _ = cv2.getTextSize(zoom_label, cv2.FONT_HERSHEY_SIMPLEX, fs, 3)
+                if thw > dz_size - 8:
+                    fs = (dz_size - 8) / thw * fs
+
+                draw_square_button(dz_x, zoom_cy, zoom_label,
+                                font_scale=fs, font_thickness=3,
+                                text_color=(240,240,0))
+
+                button0_w, button0_h = rect_width, rect_height
+                button0_x = button1_top_left_x - horizontal_spacing - button0_w
+                button0_y = button1_top_left_y
+
+                if screenshot_img is not None:
+                    img_resized = cv2.resize(screenshot_img, (button0_w, button0_h))
+                    if img_resized.shape[2] == 3:
+                        img_resized = cv2.cvtColor(img_resized, cv2.COLOR_BGR2BGRA)
+                    x0 = max(0, button0_x)
+                    y0 = max(0, button0_y)
+                    x1 = min(w, button0_x + button0_w)
+                    y1 = min(h, button0_y + button0_h)
+                    img_w = x1 - x0
+                    img_h = y1 - y0
+                    if img_w > 0 and img_h > 0:
+                        frame[y0:y1, x0:x1] = img_resized[0:img_h, 0:img_w, :]
+
+                # BUTTON 1
+                cv2.rectangle(frame,
+                            (button1_top_left_x, button1_top_left_y),
+                            (button1_top_left_x + rect_width, button1_top_left_y + rect_height),
+                            DARK_TURQUOISE, thickness=-1)
+                cv2.rectangle(frame,
+                            (button1_top_left_x, button1_top_left_y),
+                            (button1_top_left_x + rect_width, button1_top_left_y + rect_height),
+                            MEDIUM_TURQUOISE, thickness=2)
+                # Add "D" text to Button 1
+                text = "D"
+                (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                tx = button1_top_left_x + (rect_width - tw) // 2
+                ty = button1_top_left_y + (rect_height + th) // 2
+                cv2.putText(frame, text, (tx, ty),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
+
+                # BUTTON 2 (to the right of Button 1)
+                button2_top_left_x = button1_top_left_x + rect_width + horizontal_spacing
+                button2_top_left_y = button1_top_left_y
+                cv2.rectangle(frame,
+                            (button2_top_left_x, button2_top_left_y),
+                            (button2_top_left_x + rect_width, button2_top_left_y + rect_height),
+                            DARK_TURQUOISE, thickness=-1)
+                cv2.rectangle(frame,
+                            (button2_top_left_x, button2_top_left_y),
+                            (button2_top_left_x + rect_width, button2_top_left_y + rect_height),
+                            MEDIUM_TURQUOISE, thickness=2)
+                
+                # Add "NC" text to Button 2
+                text = "NC"
+                (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                tx = button2_top_left_x + (rect_width - tw) // 2
+                ty = button2_top_left_y + (rect_height + th) // 2
+                cv2.putText(frame, text, (tx, ty),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
+
+                # BUTTON 3 (NetCfg) further to the right             
+                button3_w = rect_width
+                button3_h = rect_height
+                button3_x = button2_top_left_x + rect_width + horizontal_spacing
+                button3_y = button1_top_left_y
+
+                if netowork_config_img is not None:
+                    img_resized = cv2.resize(netowork_config_img, (button3_w, button3_h))
+                    if img_resized.shape[2] == 3:
+                        img_resized = cv2.cvtColor(img_resized, cv2.COLOR_BGR2BGRA)
+                    x0 = max(0, button3_x)
+                    y0 = max(0, button3_y)
+                    x1 = min(w, button3_x + button3_w)
+                    y1 = min(h, button3_y + button3_h)
+                    img_w = x1 - x0
+                    img_h = y1 - y0
+                    if img_w > 0 and img_h > 0:
+                        frame[y0:y1, x0:x1] = img_resized[0:img_h, 0:img_w, :]
+
+                # BUTTON 4 PRESET
+                button4_w, button4_h = rect_width + 60, rect_height
+                button4_x = button3_x + button3_w + horizontal_spacing
+                button4_y = button1_top_left_y
+                cv2.rectangle(frame,
+                            (button4_x, button4_y),
+                            (button4_x + button4_w, button4_y + button4_h),
+                            DARK_TURQUOISE, thickness=-1)
+                cv2.rectangle(frame,
+                            (button4_x, button4_y),
+                            (button4_x + button4_w, button4_y + button4_h),
+                            MEDIUM_TURQUOISE, thickness=2)
+                text = "Presets"
+                (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                tx = button4_x + (button4_w - tw) // 2
+                ty = button4_y + (button4_h + th) // 2
+                cv2.putText(frame, text, (tx, ty),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
+                
+                # BUTTON 5
+                buttonMT_w, buttonMT_h = rect_width, rect_height
+                button0_x = button1_top_left_x - horizontal_spacing - rect_width 
+                buttonMT_x = button0_x - horizontal_spacing - buttonMT_w   
+                buttonMT_y = button1_top_left_y
+
+                cv2.rectangle(frame,
+                            (buttonMT_x, buttonMT_y),
+                            (buttonMT_x + buttonMT_w, buttonMT_y + buttonMT_h),
+                            DARK_TURQUOISE, thickness=-1)
+                cv2.rectangle(frame,
+                            (buttonMT_x, buttonMT_y),
+                            (buttonMT_x + buttonMT_w, buttonMT_y + buttonMT_h),
+                            MEDIUM_TURQUOISE, thickness=2)
+
+                # Add "MT" text to Button MT
+                text = "MT"
+                (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                tx = buttonMT_x + (buttonMT_w - tw) // 2
+                ty = buttonMT_y + (buttonMT_h + th) // 2
+                cv2.putText(frame, text, (tx, ty),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, WHITE, 2, cv2.LINE_AA)
+
+                if overlay_data.get("presets_flag", 0) == 1:
+                    panel_w, panel_h = 520, 550  
+                    panel_x = w - panel_w - 10
+                    panel_y = 80
+                    cv2.rectangle(frame,
+                                (panel_x, panel_y),
+                                (panel_x + panel_w, panel_y + panel_h),
+                                DARK_GREEN, thickness=-1)
+                    cv2.rectangle(frame,
+                                (panel_x, panel_y),
+                                (panel_x + panel_w, panel_y + panel_h),
+                                MEDIUM_GREEN, thickness=2)
+                    btn_h = 50
+                    add_btn_y = panel_y + 20
+                    cv2.rectangle(frame,
+                                (panel_x + 10, add_btn_y),
+                                (panel_x + panel_w - 10, add_btn_y + btn_h),
+                                MEDIUM_GREEN, thickness=-1)
+                    cv2.putText(frame, "Add Marker",
+                                (panel_x + 20, add_btn_y + btn_h // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+                    del_btn_y = add_btn_y + btn_h + 10
+                    cv2.rectangle(frame,
+                                (panel_x + 10, del_btn_y),
+                                (panel_x + panel_w - 10, del_btn_y + btn_h),
+                                MEDIUM_GREEN, thickness=-1)
+                    cv2.putText(frame, "Delete Marker",
+                                (panel_x + 20, del_btn_y + btn_h // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+                    slot_h = 34
+                    slots_start_y = del_btn_y + btn_h + 30
+                    for i in range(10):
+                        y = slots_start_y + i * (slot_h + 8)
+                        name = overlay_data["markers"][i]
+                        color = MEDIUM_GREEN if i == overlay_data["current_preset_index"] else WHITE
+                        cv2.putText(frame,
+                                    f"{i + 1}. {name}",
+                                    (panel_x + 20, y),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
+                        if "presets_positions" in overlay_data and i < len(overlay_data["presets_positions"]):
+                            pos = overlay_data["presets_positions"][i]
+                            if pos.get("x") is not None and pos.get("y") is not None:
+                                coord_text = f"X:{pos['x']} Y:{pos['y']}"
+                                (tw, th), _ = cv2.getTextSize(coord_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                                coord_x = panel_x + panel_w - tw - 30
+                                cv2.putText(frame, coord_text, (coord_x, y),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
+
+                # ------------------ PIP Toggle Button ------------------
+                try:
+                    pip_btn_w, pip_btn_h = rect_width, rect_height
+
+                    pip_btn_x = button4_x + button4_w + horizontal_spacing - 30
+                    pip_btn_y = button1_top_left_y
+
+                    pip_is_on = overlay_data.get("pip_visible", 0) == 1
+
+                    fill_col = DARK_TURQUOISE if pip_is_on else (80, 80, 80)
+                    border_col = MEDIUM_TURQUOISE if pip_is_on else (160, 160, 160)
+                    text_col = WHITE
+
+                    cv2.rectangle(frame,
+                                (pip_btn_x, pip_btn_y),
+                                (pip_btn_x + pip_btn_w, pip_btn_y + pip_btn_h),
+                                fill_col, thickness=-1)
+                    cv2.rectangle(frame,
+                                (pip_btn_x, pip_btn_y),
+                                (pip_btn_x + pip_btn_w, pip_btn_y + pip_btn_h),
+                                border_col, thickness=2)
+
+                    icon_w = 16
+                    icon_padding_left = 8
+                    icon_x = pip_btn_x + icon_padding_left
+                    icon_y = pip_btn_y + (pip_btn_h - icon_w) // 2
+                    icon_col = (0, 200, 0) if pip_is_on else (0, 0, 200)
+                    cv2.rectangle(frame, (icon_x, icon_y), (icon_x + icon_w, icon_y + icon_w), icon_col, -1)
+                    cv2.rectangle(frame, (icon_x, icon_y), (icon_x + icon_w, icon_y + icon_w), (20, 20, 20), 1)
+
+                    label = "PIP"
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    fs = 0.7
+                    thickness = 2
+                    text_start_x = icon_x + icon_w + 12  
+                    remaining_w = (pip_btn_x + pip_btn_w) - text_start_x - 8  
+                    (tw, th), _ = cv2.getTextSize(label, font, fs, thickness)
+                    if tw > remaining_w:
+                        tx = text_start_x
+                    else:
+                        tx = text_start_x + (remaining_w - tw) // 2
+                    ty = pip_btn_y + (pip_btn_h + th) // 2 - 3
+
+                    cv2.putText(frame, label, (tx+1, ty+1), font, fs, (0,0,0), thickness+1, cv2.LINE_AA)
+                    cv2.putText(frame, label, (tx, ty), font, fs, text_col, thickness, cv2.LINE_AA)
+
+                except Exception as e:
+                    log.warning(f"[UI] Failed to draw adjusted PIP toggle button: {e}")
+
+                # ── Delete ────────────────────────────────────────────────────────
+                if overlay_data.get("delete_marker_flag", 0) == 1:
+                    idx = overlay_data["current_preset_index"]
+                    overlay_data["markers"][idx] = ""
+                    overlay_data["delete_marker_flag"] = 0 
+                    with open(presets_path, "w") as f:
+                        json.dump({
+                            "presets_flag": overlay_data["presets_flag"],
+                            "current_preset_index": overlay_data["current_preset_index"],
+                            "add_marker_flag": overlay_data["add_marker_flag"],
+                            "delete_marker_flag": overlay_data["delete_marker_flag"],
+                            "markers": overlay_data["markers"],
+                        }, f)
+                if overlay_data.get("add_marker_flag", 0) == 1:
+                    mask = frame.copy()
+                    cv2.rectangle(mask, (0, 0), (w, h), BLACK, thickness=-1)
+                    cv2.addWeighted(mask, 0.6, frame, 0.4, 0, frame)
+                    kb_w, kb_h = 300, 360
+                    kb_x, kb_y = (w - kb_w) // 2, (h - kb_h) // 2 + 40
+                    cv2.rectangle(frame, (kb_x, kb_y),
+                                (kb_x + kb_w, kb_y + kb_h),
+                                DARK_GREEN, thickness=-1)
+                    cv2.rectangle(frame, (kb_x, kb_y),
+                                (kb_x + kb_w, kb_y + kb_h),
+                                MEDIUM_GREEN, thickness=2)
+                    cv2.putText(frame, overlay_data.get("marker_name", ""),
+                                (kb_x + 10, kb_y + 40),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.0, WHITE, 2, cv2.LINE_AA)
+                    buttons = [
+                        ("1", kb_x + 10, kb_y + 70),
+                        ("2", kb_x + 80, kb_y + 70),
+                        ("3", kb_x + 150, kb_y + 70),
+                        ("4", kb_x + 10, kb_y + 140),
+                        ("5", kb_x + 80, kb_y + 140),
+                        ("6", kb_x + 150, kb_y + 140),
+                        ("7", kb_x + 10, kb_y + 210),
+                        ("8", kb_x + 80, kb_y + 210),
+                        ("9", kb_x + 150, kb_y + 210),
+                        (".", kb_x + 10, kb_y + 280),
+                        ("0", kb_x + 80, kb_y + 280),
+                        ("C", kb_x + 150, kb_y + 280),
+                        ("OK", kb_x + 220, kb_y + 280),
+                    ]
+                    btn_w, btn_h = 60, 50
+                    for txt, bx, by in buttons:
+                        cv2.rectangle(frame,
+                                    (bx, by),
+                                    (bx + btn_w, by + btn_h),
+                                    DARK_GREEN, thickness=-1)
+                        cv2.rectangle(frame,
+                                    (bx, by),
+                                    (bx + btn_w, by + btn_h),
+                                    MEDIUM_GREEN, thickness=2)
+                        (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+                        tx = bx + (btn_w - tw) // 2
+                        ty = by + (btn_h + th) // 2
+                        cv2.putText(frame, txt, (tx, ty),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
+                # ===========================
+                # MAIN MENU
+                # ===========================
+                if overlay_data.get("menu_flag", 0) == 1:
+                    menu_width = 400
+                    menu_height = 300
+                    margin_top = 10
+                    margin_left = 10
+
+                    xy_mode = overlay_data.get("nc_xy_mode", 0)
+
+                    if xy_mode:
+                        field1_label = "X:"
+                        field2_label = "Y:"
+                        field1_value = overlay_data.get("nc_x_value", "0")
+                        field2_value = overlay_data.get("nc_y_value", "0")
+                    else:
+                        field1_label = "Field "
+                        field2_label = "Field"
+                        field1_value = overlay_data.get("field1_value", "0")
+                        field2_value = overlay_data.get("field2_value", "0")
+                    
+                    menu_width = 400
+                    menu_height = 300
+                    margin_top = 10
+                    margin_left = 10
+
+                    cv2.rectangle(frame,
+                                  (margin_left, margin_top),
+                                  (margin_left + menu_width, margin_top + menu_height),
+                                  DARK_GREEN, thickness=-1)
+                    cv2.rectangle(frame,
+                                  (margin_left, margin_top),
+                                  (margin_left + menu_width, margin_top + menu_height),
+                                  MEDIUM_GREEN, thickness=2)
+
+                    # NorthConnect button 
+                    button_height = 60
+                    button_width = menu_width - 20
+                    button_x = margin_left + 10
+                    button_y = margin_top + 10
+                    cv2.rectangle(frame,
+                                  (button_x, button_y),
+                                  (button_x + button_width, button_y + button_height),
+                                  MEDIUM_GREEN, thickness=-1)
+                    cv2.rectangle(frame,
+                                  (button_x, button_y),
+                                  (button_x + button_width, button_y + button_height),
+                                  DARK_GREEN, thickness=2)
+
+                    # NorthConnect text 
+                    text = "NorthConnect"
+                    font_scale = 1.0
+                    thickness = 2
+                    (text_width, text_height), _ = cv2.getTextSize(text,
+                                                                  cv2.FONT_HERSHEY_SIMPLEX,
+                                                                  font_scale, thickness)
+                    text_x = button_x + (button_width - text_width) // 2
+                    text_y = button_y + (button_height + text_height) // 2
+                    cv2.putText(frame, text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                                BLACK, thickness + 2, cv2.LINE_AA)
+                    cv2.putText(frame, text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                                WHITE, thickness, cv2.LINE_AA)
+
+                    input_height = 40
+                    input_y_start = button_y + button_height + 20
+
+                    # Field 1
+                    field1_rect = (
+                        margin_left + 20,
+                        input_y_start,
+                        menu_width - 40,
+                        input_height
+                    )
+                    field1_color = MEDIUM_GREEN if overlay_data.get("field1Flag", 0) == 1 else (200, 200, 200)
+                    cv2.rectangle(frame,
+                                  (field1_rect[0], field1_rect[1]),
+                                  (field1_rect[0] + field1_rect[2], field1_rect[1] + field1_rect[3]),
+                                  field1_color, thickness=-1)
+                    cv2.putText(frame, field1_label,
+                                (field1_rect[0] - 80, field1_rect[1] + field1_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2)
+                    cv2.putText(frame, field1_value,
+                                (field1_rect[0] + 10, field1_rect[1] + field1_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+
+
+                    # Field 2
+                    field2_rect = (
+                        margin_left + 20,
+                        input_y_start + input_height + 20,
+                        menu_width - 40,
+                        input_height
+                    )
+                    field2_color = MEDIUM_GREEN if overlay_data.get("field2Flag", 0) == 1 else (200, 200, 200)
+                    cv2.rectangle(frame,
+                                  (field2_rect[0], field2_rect[1]),
+                                  (field2_rect[0] + field2_rect[2], field2_rect[1] + field2_rect[3]),
+                                  field2_color, thickness=-1)
+                    cv2.putText(frame, field2_label,
+                                (field2_rect[0] - 80, field2_rect[1] + field2_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2)
+                    cv2.putText(frame, field2_value,
+                                (field2_rect[0] + 10, field2_rect[1] + field2_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+
+                    toggle_btn_x = margin_left + (menu_width - 120) // 2
+                    toggle_btn_y = field2_rect[1] + field2_rect[3] + 20
+                    toggle_btn_w = 120
+                    toggle_btn_h = 50
+
+                    cv2.rectangle(frame, (toggle_btn_x, toggle_btn_y),
+                                (toggle_btn_x + toggle_btn_w, toggle_btn_y + toggle_btn_h),
+                                MEDIUM_GREEN, thickness=-1)
+
+                    # Draw border - always DARK_GREEN like NorthConnect
+                    cv2.rectangle(frame, (toggle_btn_x, toggle_btn_y),
+                                (toggle_btn_x + toggle_btn_w, toggle_btn_y + toggle_btn_h),
+                                DARK_GREEN, thickness=2)
+
+                    toggle_text = "XY" if not xy_mode else "Angle"
+                    (text_w, text_h), _ = cv2.getTextSize(toggle_text, cv2.FONT_HERSHEY_SIMPLEX, 1.2, 3)
+                    text_x = toggle_btn_x + (toggle_btn_w - text_w) // 2
+                    text_y = toggle_btn_y + (toggle_btn_h + text_h) // 2
+                    cv2.putText(frame, toggle_text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.2, BLACK, 4, cv2.LINE_AA)   
+                    cv2.putText(frame, toggle_text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.2, WHITE, 2, cv2.LINE_AA)  
+
+                    if overlay_data.get("field1Flag", 0) == 1 or overlay_data.get("field2Flag", 0) == 1:
+                        overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
+                        overlay_alpha[:] = BLACK
+                        alpha = 0.6
+
+                        numpad_width  = 300
+                        numpad_height = 360
+                        numpad_x      = (w - numpad_width) // 2
+                        numpad_y      = (h - numpad_height) // 2 + 40
+
+                        cv2.rectangle(frame,
+                                      (numpad_x, numpad_y),
+                                      (numpad_x + numpad_width, numpad_y + numpad_height),
+                                      DARK_GREEN, thickness=-1)
+                        cv2.rectangle(frame,
+                                      (numpad_x, numpad_y),
+                                      (numpad_x + numpad_width, numpad_y + numpad_height),
+                                      MEDIUM_GREEN, thickness=2)
+
+                        if xy_mode:
+                            active_value = (
+                                overlay_data.get("nc_x_value", "0")
+                                if overlay_data.get("field1Flag", 0) == 1
+                                else overlay_data.get("nc_y_value", "0")
+                            )
+                        else:
+                            active_value = (
+                                overlay_data.get("field1_value", "0")
+                                if overlay_data.get("field1Flag", 0) == 1
+                                else overlay_data.get("field2_value", "0")
+                            )
+                        cv2.putText(frame, active_value,
+                                    (numpad_x + 10, numpad_y + 40),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
+
+                        buttons = [
+                            ("1", numpad_x + 10,  numpad_y + 70),
+                            ("2", numpad_x + 80,  numpad_y + 70),
+                            ("3", numpad_x + 150, numpad_y + 70),
+                            ("",  numpad_x + 220, numpad_y + 70),
+
+                            ("4", numpad_x + 10,  numpad_y + 140),
+                            ("5", numpad_x + 80,  numpad_y + 140),
+                            ("6", numpad_x + 150, numpad_y + 140),
+                            ("",  numpad_x + 220, numpad_y + 140),
+
+                            ("7", numpad_x + 10,  numpad_y + 210),
+                            ("8", numpad_x + 80,  numpad_y + 210),
+                            ("9", numpad_x + 150, numpad_y + 210),
+                            ("",  numpad_x + 220, numpad_y + 210),
+
+                            (".",  numpad_x + 10,  numpad_y + 280),
+                            ("0",  numpad_x + 80,  numpad_y + 280),
+                            ("C",  numpad_x + 150, numpad_y + 280),
+                            ("OK", numpad_x + 220, numpad_y + 280),
+                        ]
+
+                        btn_width  = 60
+                        btn_height = 50
+                        for txt, bx, by in buttons:
+                            if txt == "":
+                                continue
+                            cv2.rectangle(frame,
+                                          (bx, by),
+                                          (bx + btn_width, by + btn_height),
+                                          DARK_GREEN, thickness=-1)
+                            cv2.rectangle(frame,
+                                          (bx, by),
+                                          (bx + btn_width, by + btn_height),
+                                          MEDIUM_GREEN, thickness=2)
+
+                            (tw, th), _ = cv2.getTextSize(txt,
+                                                         cv2.FONT_HERSHEY_SIMPLEX,
+                                                         0.8, 2)
+                            text_x = bx + (btn_width - tw) // 2
+                            text_y = by + (btn_height + th) // 2
+                            cv2.putText(frame, txt, (text_x, text_y),
+                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.8, WHITE, 2, cv2.LINE_AA)
+
+                # ===========================
+                # NETWORK CONFIG 
+                # ===========================
+                if overlay_data.get("network_flag", 0) == 1:
+                    net_w = 500
+                    net_h = 300
+                    margin_top = 50
+                    margin_left = (w - net_w) // 2
+
+                    cv2.rectangle(frame,
+                                  (margin_left, margin_top),
+                                  (margin_left + net_w, margin_top + net_h),
+                                  WHITE, thickness=-1)
+                    cv2.rectangle(frame,
+                                  (margin_left, margin_top),
+                                  (margin_left + net_w, margin_top + net_h),
+                                  MEDIUM_GREEN, thickness=3)
+
+                    x0 = margin_left + 40   
+                    box_h = 40
+                    y_start = margin_top + 30
+
+                    labels = ["IP Address:", "Subnet Mask:", "Gateway:", "DNS 1:", "DNS 2:"]
+                    keys   = ["ip_address",   "subnet_mask",   "gateway",  "DNS1",   "DNS2"]
+                    field_boxes = {}
+
+                    for i, (lbl, key) in enumerate(zip(labels, keys)):
+                        y0 = y_start + i * (box_h + 10) 
+
+                        cv2.putText(frame, lbl,
+                                    (x0, y0 + box_h // 2 + 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2, cv2.LINE_AA)
+
+                        bx0 = x0 + 160
+                        by0 = y0
+                        bx1 = margin_left + net_w - 20   
+                        by1 = by0 + box_h
+
+                        is_act = (overlay_data.get("active_network_field") == key)
+                        col   = MEDIUM_GREEN if is_act else (200, 200, 200)
+                        field_boxes[key] = (bx0, by0, bx1, by1)
+
+                        cv2.rectangle(frame, (bx0, by0), (bx1, by1), col, thickness=-1)
+                        cv2.rectangle(frame, (bx0, by0), (bx1, by1), BLACK, thickness=2)
+
+                        cur_txt = overlay_data.get(key, "")
+                        cv2.putText(frame, cur_txt,
+                                    (bx0 + 10, by0 + box_h // 2 + 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, DARK_TURQUOISE, 2, cv2.LINE_AA)
+
+                    btn_w = 100
+                    btn_h = 40
+                    btn_x = margin_left + net_w - btn_w - 20   
+                    btn_y = margin_top + 270 + 20                
+                    cv2.rectangle(frame,
+                                  (btn_x, btn_y),
+                                  (btn_x + btn_w, btn_y + btn_h),
+                                  MEDIUM_GREEN, thickness=-1)
+                    cv2.rectangle(frame,
+                                  (btn_x, btn_y),
+                                  (btn_x + btn_w, btn_y + btn_h),
+                                  DARK_GREEN, thickness=2)
+                    text = "Set"
+                    (tw, th), _ = cv2.getTextSize(text,
+                                                  cv2.FONT_HERSHEY_SIMPLEX,
+                                                  0.8, 2)
+                    text_x = btn_x + (btn_w - tw) // 2
+                    text_y = btn_y + (btn_h + th) // 2
+                    cv2.putText(frame, text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
+
+                    if overlay_data.get("numpad_flag", 0) == 1 and overlay_data.get("active_network_field"):
+                        overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
+                        overlay_alpha[:] = BLACK
+                        alpha = 0.6
+
+                        numpad_w = 300
+                        numpad_h = 360
+                        numpad_x = (w - numpad_w) // 2
+                        numpad_y = (h - numpad_h) // 2 + 40
+
+                        cv2.rectangle(frame,
+                                      (numpad_x, numpad_y),
+                                      (numpad_x + numpad_w, numpad_y + numpad_h),
+                                      DARK_GREEN, thickness=-1)
+                        cv2.rectangle(frame,
+                                      (numpad_x, numpad_y),
+                                      (numpad_x + numpad_w, numpad_y + numpad_h),
+                                      MEDIUM_GREEN, thickness=2)
+
+                        active_value = (
+                            overlay_data.get("field1_value", "0")
+                            if overlay_data.get("field1Flag", 0) == 1
+                            else overlay_data.get("field2_value", "0")
+                        )
+                        cv2.putText(frame, active_value,
+                                    (numpad_x + 10, numpad_y + 40),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
+
+                        buttons = [
+                            ("1", numpad_x + 10,  numpad_y + 70),
+                            ("2", numpad_x + 80,  numpad_y + 70),
+                            ("3", numpad_x + 150, numpad_y + 70),
+                            ("",  numpad_x + 220, numpad_y + 70),
+
+                            ("4", numpad_x + 10,  numpad_y + 140),
+                            ("5", numpad_x + 80,  numpad_y + 140),
+                            ("6", numpad_x + 150, numpad_y + 140),
+                            ("",  numpad_x + 220, numpad_y + 140),
+
+                            ("7", numpad_x + 10,  numpad_y + 210),
+                            ("8", numpad_x + 80,  numpad_y + 210),
+                            ("9", numpad_x + 150, numpad_y + 210),
+                            ("",  numpad_x + 220, numpad_y + 210),
+
+                            (".",  numpad_x + 10,  numpad_y + 280),
+                            ("0",  numpad_x + 80,  numpad_y + 280),
+                            ("C",  numpad_x + 150, numpad_y + 280),
+                            ("OK", numpad_x + 220, numpad_y + 280),
+                        ]
+
+                        btn_width  = 60
+                        btn_height = 50
+                        for txt, bx, by in buttons:
+                            if txt == "":
+                                continue
+                            cv2.rectangle(frame,
+                                          (bx, by),
+                                          (bx + btn_width, by + btn_height),
+                                          DARK_GREEN, thickness=-1)
+                            cv2.rectangle(frame,
+                                          (bx, by),
+                                          (bx + btn_width, by + btn_height),
+                                          MEDIUM_GREEN, thickness=2)
+
+                            (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+                            text_x = bx + (btn_width - tw) // 2
+                            text_y = by + (btn_height + th) // 2
+                            cv2.putText(frame, txt, (text_x, text_y),
+                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.8, WHITE, 2, cv2.LINE_AA)
+
+                # ===========================
+                # NETWORK CONFIG 
+                # ===========================
+                if overlay_data.get("network_flag", 0) == 1:
+                    net_w = 500
+                    net_h = 300
+                    margin_top = 50
+                    margin_left = (w - net_w) // 2
+
+                    cv2.rectangle(frame,
+                                  (margin_left, margin_top),
+                                  (margin_left + net_w, margin_top + net_h),
+                                  WHITE, thickness=-1)
+                    cv2.rectangle(frame,
+                                  (margin_left, margin_top),
+                                  (margin_left + net_w, margin_top + net_h),
+                                  MEDIUM_GREEN, thickness=3)
+
+                    x0 = margin_left + 40    
+                    y_start = margin_top + 30
+
+                    labels = ["IP Address:", "Subnet Mask:", "Gateway:", "DNS 1:", "DNS 2:"]
+                    keys   = ["ip_address",   "subnet_mask",   "gateway",  "DNS1",   "DNS2"]
+                    field_boxes = {}
+
+                    for i, (lbl, key) in enumerate(zip(labels, keys)):
+                        y0 = y_start + i * (box_h + 10)  
+
+                        # Draw label (black)
+                        cv2.putText(frame, lbl,
+                                    (x0, y0 + box_h // 2 + 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2, cv2.LINE_AA)
+
+                        bx0 = x0 + 160
+                        by0 = y0
+                        bx1 = margin_left + net_w - 20  
+                        by1 = by0 + box_h
+
+                        is_act = (overlay_data.get("active_network_field") == key)
+                        col   = MEDIUM_GREEN if is_act else (200, 200, 200)
+                        field_boxes[key] = (bx0, by0, bx1, by1)
+
+                        cv2.rectangle(frame, (bx0, by0), (bx1, by1), col, thickness=-1)
+                        cv2.rectangle(frame, (bx0, by0), (bx1, by1), BLACK, thickness=2)
+
+                        cur_txt = overlay_data.get(key, "")
+                        cv2.putText(frame, cur_txt,
+                                    (bx0 + 10, by0 + box_h // 2 + 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, DARK_TURQUOISE, 2, cv2.LINE_AA)
+
+                    btn_w = 100
+                    btn_h = 40
+                    btn_x = margin_left + net_w - btn_w - 20    
+                    btn_y = margin_top + 270 + 20                
+                    cv2.rectangle(frame,
+                                  (btn_x, btn_y),
+                                  (btn_x + btn_w, btn_y + btn_h),
+                                  MEDIUM_GREEN, thickness=-1)
+                    cv2.rectangle(frame,
+                                  (btn_x, btn_y),
+                                  (btn_x + btn_w, btn_y + btn_h),
+                                  DARK_GREEN, thickness=2)
+                    text = "Set"
+                    (tw, th), _ = cv2.getTextSize(text,
+                                                  cv2.FONT_HERSHEY_SIMPLEX,
+                                                  0.8, 2)
+                    text_x = btn_x + (btn_w - tw) // 2
+                    text_y = btn_y + (btn_h + th) // 2
+                    cv2.putText(frame, text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
+
+                    if overlay_data.get("numpad_flag", 0) == 1 and overlay_data.get("active_network_field"):
+                        overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
+                        overlay_alpha[:] = BLACK
+                        alpha = 0.6
+
+                        numpad_w = 300
+                        numpad_h = 360
+                        numpad_x = (w - numpad_w) // 2
+                        numpad_y = (h - numpad_h) // 2 + 40
+
+                        cv2.rectangle(frame,
+                                      (numpad_x, numpad_y),
+                                      (numpad_x + numpad_w, numpad_y + numpad_h),
+                                      DARK_GREEN, thickness=-1)
+                        cv2.rectangle(frame,
+                                      (numpad_x, numpad_y),
+                                      (numpad_x + numpad_w, numpad_y + numpad_h),
+                                      MEDIUM_GREEN, thickness=2)
+
+                        active_value = (
+                            overlay_data.get("field1_value", "0")
+                            if overlay_data.get("field1Flag", 0) == 1
+                            else overlay_data.get("field2_value", "0")
+                        )
+                        cv2.putText(frame, active_value,
+                                    (numpad_x + 10, numpad_y + 40),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
+
+                        buttons = [
+                            ("1", numpad_x + 10,  numpad_y + 70),
+                            ("2", numpad_x + 80,  numpad_y + 70),
+                            ("3", numpad_x + 150, numpad_y + 70),
+                            ("",  numpad_x + 220, numpad_y + 70),
+
+                            ("4", numpad_x + 10,  numpad_y + 140),
+                            ("5", numpad_x + 80,  numpad_y + 140),
+                            ("6", numpad_x + 150, numpad_y + 140),
+                            ("",  numpad_x + 220, numpad_y + 140),
+
+                            ("7", numpad_x + 10,  numpad_y + 210),
+                            ("8", numpad_x + 80,  numpad_y + 210),
+                            ("9", numpad_x + 150, numpad_y + 210),
+                            ("",  numpad_x + 220, numpad_y + 210),
+
+                            (".",  numpad_x + 10,  numpad_y + 280),
+                            ("0",  numpad_x + 80,  numpad_y + 280),
+                            ("C",  numpad_x + 150, numpad_y + 280),
+                            ("OK", numpad_x + 220, numpad_y + 280),
+                        ]
+
+                        btn_width  = 60
+                        btn_height = 50
+                        for txt, bx, by in buttons:
+                            if txt == "":
+                                continue
+                            cv2.rectangle(frame,
+                                          (bx, by),
+                                          (bx + btn_width, by + btn_height),
+                                          DARK_GREEN, thickness=-1)
+                            cv2.rectangle(frame,
+                                          (bx, by),
+                                          (bx + btn_width, by + btn_height),
+                                          MEDIUM_GREEN, thickness=2)
+
+                            (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+                            text_x = bx + (btn_width - tw) // 2
+                            text_y = by + (btn_height + th) // 2
+                            cv2.putText(frame, txt, (text_x, text_y),
+                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.8, WHITE, 2, cv2.LINE_AA)
+
+                # ===========================
+                # NETWORK CONFIG
+                # ===========================
+                if overlay_data.get("network_flag", 0) == 1:
+                    net_w = 500
+                    net_h = 300
+                    margin_top = 50
+                    margin_left = (w - net_w) // 2
+
+                    cv2.rectangle(frame,
+                                  (margin_left, margin_top),
+                                  (margin_left + net_w, margin_top + net_h),
+                                  WHITE, thickness=-1)
+                    cv2.rectangle(frame,
+                                  (margin_left, margin_top),
+                                  (margin_left + net_w, margin_top + net_h),
+                                  MEDIUM_GREEN, thickness=3)
+
+                    x0 = margin_left + 40
+                    box_h = 40
+                    y_start = margin_top + 30
+
+                    labels = ["IP Address:", "Subnet Mask:", "Gateway:", "DNS 1:", "DNS 2:"]
+                    keys   = ["ip_address",   "subnet_mask",   "gateway",  "DNS1",   "DNS2"]
+                    field_boxes = {}
+
+                    for i, (lbl, key) in enumerate(zip(labels, keys)):
+                        y0 = y_start + i * (box_h + 10)  # row‐height = 50px
+
+                        cv2.putText(frame, lbl,
+                                    (x0, y0 + box_h // 2 + 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2, cv2.LINE_AA)
+
+                        bx0 = x0 + 160
+                        by0 = y0
+                        bx1 = margin_left + net_w - 20   
+                        by1 = by0 + box_h
+
+                        is_act = (overlay_data.get("active_network_field") == key)
+                        col   = MEDIUM_GREEN if is_act else (200, 200, 200)
+                        field_boxes[key] = (bx0, by0, bx1, by1)
+
+                        cv2.rectangle(frame, (bx0, by0), (bx1, by1), col, thickness=-1)
+                        cv2.rectangle(frame, (bx0, by0), (bx1, by1), BLACK, thickness=2)
+
+                        cur_txt = overlay_data.get(key, "")
+                        cv2.putText(frame, cur_txt,
+                                    (bx0 + 10, by0 + box_h // 2 + 5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, DARK_TURQUOISE, 2, cv2.LINE_AA)
+
+                    btn_w = 100
+                    btn_h = 40
+                    btn_x = margin_left + net_w - btn_w - 20    
+                    btn_y = margin_top + 270 + 20              
+                    cv2.rectangle(frame,
+                                  (btn_x, btn_y),
+                                  (btn_x + btn_w, btn_y + btn_h),
+                                  MEDIUM_GREEN, thickness=-1)
+                    cv2.rectangle(frame,
+                                  (btn_x, btn_y),
+                                  (btn_x + btn_w, btn_y + btn_h),
+                                  DARK_GREEN, thickness=2)
+                    text = "Set"
+                    (tw, th), _ = cv2.getTextSize(text,
+                                                  cv2.FONT_HERSHEY_SIMPLEX,
+                                                  0.8, 2)
+                    text_x = btn_x + (btn_w - tw) // 2
+                    text_y = btn_y + (btn_h + th) // 2
+                    cv2.putText(frame, text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2, cv2.LINE_AA)
+
+                    if overlay_data.get("numpad_flag", 0) == 1 and overlay_data.get("active_network_field"):
+                        overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
+                        overlay_alpha[:] = BLACK
+                        alpha = 0.6
+
+                        numpad_w = 300
+                        numpad_h = 360
+                        numpad_x = (w - numpad_w) // 2
+                        numpad_y = (h - numpad_h) // 2 + 40
+
+                        cv2.rectangle(frame,
+                                      (numpad_x, numpad_y),
+                                      (numpad_x + numpad_w, numpad_y + numpad_h),
+                                      DARK_GREEN, thickness=-1)
+                        cv2.rectangle(frame,
+                                      (numpad_x, numpad_y),
+                                      (numpad_x + numpad_w, numpad_y + numpad_h),
+                                      MEDIUM_GREEN, thickness=2)
+
+                        active_value = (
+                            overlay_data.get("field1_value", "0")
+                            if overlay_data.get("field1Flag", 0) == 1
+                            else overlay_data.get("field2_value", "0")
+                        )
+                        cv2.putText(frame, active_value,
+                                    (numpad_x + 10, numpad_y + 40),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
+
+                        buttons = [
+                            ("1", numpad_x + 10,  numpad_y + 70),
+                            ("2", numpad_x + 80,  numpad_y + 70),
+                            ("3", numpad_x + 150, numpad_y + 70),
+                            ("",  numpad_x + 220, numpad_y + 70),
+
+                            ("4", numpad_x + 10,  numpad_y + 140),
+                            ("5", numpad_x + 80,  numpad_y + 140),
+                            ("6", numpad_x + 150, numpad_y + 140),
+                            ("",  numpad_x + 220, numpad_y + 140),
+
+                            ("7", numpad_x + 10,  numpad_y + 210),
+                            ("8", numpad_x + 80,  numpad_y + 210),
+                            ("9", numpad_x + 150, numpad_y + 210),
+                            ("",  numpad_x + 220, numpad_y + 210),
+
+                            (".",  numpad_x + 10,  numpad_y + 280),
+                            ("0",  numpad_x + 80,  numpad_y + 280),
+                            ("C",  numpad_x + 150, numpad_y + 280),
+                            ("OK", numpad_x + 220, numpad_y + 280),
+                        ]
+
+                        bw = 60
+                        bh = 50
+                        for txt, bx, by in buttons:
+                            if txt == "":
+                                continue
+                            cv2.rectangle(frame,
+                                          (bx, by),
+                                          (bx + bw, by + bh),
+                                          DARK_GREEN, thickness=-1)
+                            cv2.rectangle(frame,
+                                          (bx, by),
+                                          (bx + bw, by + bh),
+                                          MEDIUM_GREEN, thickness=2)
+
+                            (tw, th), _ = cv2.getTextSize(
+                                txt, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2
+                            )
+                            text_x = bx + (bw - tw) // 2
+                            text_y = by + (bh + th) // 2
+                            cv2.putText(frame, txt, (text_x, text_y),
+                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.8, WHITE, 2, cv2.LINE_AA)
+                            
+                if overlay_data.get("screenshot_flag", 0) == 1:
+                    try:
+                        timestamp = time.strftime("%Y%m%d_%H%M%S")
+                        filename = f"/tmp/screenshot_{timestamp}.png"
+                        raw_bgr = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+                        cv2.imwrite(filename, raw_bgr)
+                        log.info(f"[Screenshot] Saved raw frame: {filename}")
+                    except Exception as e:
+                        log.warning(f"[Screenshot] Failed to save screenshot: {e}")
+                    finally:
+                        overlay_data["screenshot_flag"] = 0
+                        with open(screenshot_path, "w") as f:
+                            json.dump({"screenshot_flag": 0}, f)
+
+                if overlay_data.get("move_to_target_flag", 0) == 1:
+                    menu_width = 400
+                    menu_height = 400
+                    margin_top = 10
+                    margin_left = 10
+
+                    cv2.rectangle(frame,
+                                (margin_left, margin_top),
+                                (margin_left + menu_width, margin_top + menu_height),
+                                DARK_GREEN, thickness=-1)
+                    cv2.rectangle(frame,
+                                (margin_left, margin_top),
+                                (margin_left + menu_width, margin_top + menu_height),
+                                MEDIUM_GREEN, thickness=2)
+
+                    title_y = margin_top + 40
+                    input_height = 40
+                    input_y_start = title_y + 30
+                    field_spacing = 60
+
+                    # X Field
+                    x_field_rect = (
+                        margin_left + 80,
+                        input_y_start,
+                        menu_width - 160,
+                        input_height
+                    )
+                    x_field_color = MEDIUM_GREEN if overlay_data.get("active_move_field") == "x" else (200, 200, 200)
+                    cv2.rectangle(frame,
+                                (x_field_rect[0], x_field_rect[1]),
+                                (x_field_rect[0] + x_field_rect[2], x_field_rect[1] + x_field_rect[3]),
+                                x_field_color, thickness=-1)
+                    cv2.putText(frame, "X:",
+                                (x_field_rect[0] - 30, x_field_rect[1] + x_field_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2)
+                    cv2.putText(frame, overlay_data.get("move_target_x", "0"),
+                                (x_field_rect[0] + 10, x_field_rect[1] + x_field_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+
+                    # Y Field
+                    y_field_rect = (
+                        margin_left + 80,
+                        input_y_start + field_spacing,
+                        menu_width - 160,
+                        input_height
+                    )
+                    y_field_color = MEDIUM_GREEN if overlay_data.get("active_move_field") == "y" else (200, 200, 200)
+                    cv2.rectangle(frame,
+                                (y_field_rect[0], y_field_rect[1]),
+                                (y_field_rect[0] + y_field_rect[2], y_field_rect[1] + y_field_rect[3]),
+                                y_field_color, thickness=-1)
+                    cv2.putText(frame, "Y:",
+                                (y_field_rect[0] - 30, y_field_rect[1] + y_field_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2)
+                    cv2.putText(frame, overlay_data.get("move_target_y", "0"),
+                                (y_field_rect[0] + 10, y_field_rect[1] + y_field_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+
+                    # Height Field
+                    height_field_rect = (
+                        margin_left + 80,
+                        input_y_start + field_spacing * 2,
+                        menu_width - 160,
+                        input_height
+                    )
+                    height_field_color = MEDIUM_GREEN if overlay_data.get("active_move_field") == "height" else (200, 200, 200)
+                    cv2.rectangle(frame,
+                                (height_field_rect[0], height_field_rect[1]),
+                                (height_field_rect[0] + height_field_rect[2], height_field_rect[1] + height_field_rect[3]),
+                                height_field_color, thickness=-1)
+                    cv2.putText(frame, "Height:",
+                                (height_field_rect[0] - 70, height_field_rect[1] + height_field_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, BLACK, 2)
+                    # Display current value
+                    cv2.putText(frame, overlay_data.get("move_target_height", "0"),
+                                (height_field_rect[0] + 10, height_field_rect[1] + height_field_rect[3] // 2 + 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+
+                    # Move Button
+                    move_button_width = 120
+                    move_button_height = 50
+                    move_button_x = margin_left + (menu_width - move_button_width) // 2
+                    move_button_y = input_y_start + field_spacing * 3 + 20
+
+                    cv2.rectangle(frame,
+                                (move_button_x, move_button_y),
+                                (move_button_x + move_button_width, move_button_y + move_button_height),
+                                MEDIUM_GREEN, thickness=-1)
+                    cv2.rectangle(frame,
+                                (move_button_x, move_button_y),
+                                (move_button_x + move_button_width, move_button_y + move_button_height),
+                                DARK_GREEN, thickness=2)
+
+                    # Move button text
+                    move_text = "MOVE"
+                    font_scale = 1.0
+                    thickness = 2
+                    (text_width, text_height), _ = cv2.getTextSize(move_text,
+                                                                cv2.FONT_HERSHEY_SIMPLEX,
+                                                                font_scale, thickness)
+                    text_x = move_button_x + (move_button_width - text_width) // 2
+                    text_y = move_button_y + (move_button_height + text_height) // 2
+                    cv2.putText(frame, move_text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                                BLACK, thickness + 2, cv2.LINE_AA)  
+                    cv2.putText(frame, move_text, (text_x, text_y),
+                                cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                                WHITE, thickness, cv2.LINE_AA)
+
+                    if overlay_data.get("active_move_field") is not None:
+                        overlay_alpha = np.zeros((h, w, 3), dtype=np.uint8)
+                        overlay_alpha[:] = BLACK
+                        alpha = 0.6
+
+                        numpad_width  = 300
+                        numpad_height = 360
+                        numpad_x      = (w - numpad_width) // 2
+                        numpad_y      = (h - numpad_height) // 2 + 40
+
+                        cv2.rectangle(frame,
+                                    (numpad_x, numpad_y),
+                                    (numpad_x + numpad_width, numpad_y + numpad_height),
+                                    DARK_GREEN, thickness=-1)
+                        cv2.rectangle(frame,
+                                    (numpad_x, numpad_y),
+                                    (numpad_x + numpad_width, numpad_y + numpad_height),
+                                    MEDIUM_GREEN, thickness=2)
+
+                        active_field = overlay_data.get("active_move_field")
+                        active_value = overlay_data.get(f"move_target_{active_field}", "0")
+                        field_label = active_field.upper() if active_field else ""
+                        
+                        cv2.putText(frame, str(active_value),
+                                    (numpad_x + 10, numpad_y + 40),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, WHITE, 2, cv2.LINE_AA)
+
+                        buttons = [
+                            ("1", numpad_x + 10,  numpad_y + 70),
+                            ("2", numpad_x + 80,  numpad_y + 70),
+                            ("3", numpad_x + 150, numpad_y + 70),
+                            ("",  numpad_x + 220, numpad_y + 70),
+
+                            ("4", numpad_x + 10,  numpad_y + 140),
+                            ("5", numpad_x + 80,  numpad_y + 140),
+                            ("6", numpad_x + 150, numpad_y + 140),
+                            ("",  numpad_x + 220, numpad_y + 140),
+
+                            ("7", numpad_x + 10,  numpad_y + 210),
+                            ("8", numpad_x + 80,  numpad_y + 210),
+                            ("9", numpad_x + 150, numpad_y + 210),
+                            ("",  numpad_x + 220, numpad_y + 210),
+
+                            (".",  numpad_x + 10,  numpad_y + 280),
+                            ("0",  numpad_x + 80,  numpad_y + 280),
+                            ("C",  numpad_x + 150, numpad_y + 280),
+                            ("OK", numpad_x + 220, numpad_y + 280),
+                        ]
+
+                        btn_width  = 60
+                        btn_height = 50
+                        for txt, bx, by in buttons:
+                            if txt == "":
+                                continue
+                            cv2.rectangle(frame,
+                                        (bx, by),
+                                        (bx + btn_width, by + btn_height),
+                                        DARK_GREEN, thickness=-1)
+                            cv2.rectangle(frame,
+                                        (bx, by),
+                                        (bx + btn_width, by + btn_height),
+                                        MEDIUM_GREEN, thickness=2)
+
+                            (tw, th), _ = cv2.getTextSize(txt,
+                                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                                        0.8, 2)
+                            text_x = bx + (btn_width - tw) // 2
+                            text_y = by + (btn_height + th) // 2
+                            cv2.putText(frame, txt, (text_x, text_y),
+                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.8, WHITE, 2, cv2.LINE_AA)
+
+                if (frame.shape[1], frame.shape[0]) != (out_w, out_h):
+                    frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
+
                 data = frame.tobytes()
                 buf = Gst.Buffer.new_allocate(None, len(data), None)
                 buf.fill(0, data)
 
-                # Push it downstream
                 _appsrc.emit("push-buffer", buf)
 
                 frame_count += 1
-
 
             appsrc.connect("need-data", push_frame)
             log.debug(f"[DEBUG] Successfully connected push_frame callback")
@@ -612,7 +2228,6 @@ class StreamServer:
     def readConfig(self):
         try:
             with open(self.file, 'r') as file:
-                # Filter out special characters that break the json parser
                 filter = ''.join(e for e in file.read() \
                     if e.isalnum() \
                     or e.isdigit() \
@@ -688,7 +2303,6 @@ class StreamServer:
                 
                 self.video_stabilisation = config["CameraControls"]["image_stabilization"]
                 
-                # These settings will be ignored:
                 self.bitrate_mode = config["CodecControls"]["video_bitrate_mode"]
                 self.repeat_sequence_header = config["CodecControls"]["repeat_sequence_header"]
                 self.h264_level = config["CodecControls"]["h264_level"]
@@ -735,7 +2349,7 @@ class StreamServer:
 
             # Ignore most of the parameters
             log.info("Test camera ignored most of the parameters")
-            launch_str = '( rtspsrc location=rtsp://admin:Aragats777@192.168.0.31:3333/stream latency=0 ! rtph264depay ! h264parse config-interval=1 ! rtph264pay name=pay0 pt=96'
+            launch_str = '( rtspsrc location=rtsp://admin:Aragats777@192.168.0.21:3333/stream latency=0 ! rtph264depay ! h264parse config-interval=1 ! rtph264pay name=pay0 pt=96'
             launch_str = launch_str + ' ! clockoverlay '
 
             # Completing the pipe
@@ -754,7 +2368,7 @@ class StreamServer:
             # Ignore most of the parameters
             log.info("Test camera ignored most of the parameters")
 
-            launch_str = '( rtspsrc location=rtsp://192.168.0.31:554/ latency=0 ! rtph264depay ! h264parse '
+            launch_str = '( rtspsrc location=rtsp://192.168.0.21:554/ latency=0 ! rtph264depay ! h264parse '
             launch_str = launch_str + ' ! gdkpixbufoverlay location="' + self.device + '" overlay-width=' + str(self.width) + ' overlay-height=' + str(self.height) + ' '
             launch_str = launch_str + ' ! clockoverlay '
 
@@ -784,15 +2398,15 @@ class StreamServer:
 
             # Replace both GStreamer pipelines with OpenCV overlays
             # Wait until OpenCV is able to fetch frames, blocking startup until ready
-            def wait_for_opencv_ready(rtsp_url, max_attempts=10):
+            def wait_for_opencv_ready(rtsp_url, max_attempts=50):
                 import cv2, time
                 for attempt in range(max_attempts):
                     gst_pipeline = (
-                        f'rtspsrc location={rtsp_url} latency=50 ! '
+                        f'rtspsrc location={rtsp_url} protocols=tcp  latency=0 ! '
                         f'rtph264depay ! h264parse ! nvv4l2decoder ! '
                         f'queue max-size-buffers=10 max-size-time=100000 leaky=downstream ! '
-                        f'nvvidconv ! video/x-raw, format=RGBA ! '
-                        f'appsink drop=true max-buffers=1 sync=false'
+                        f'nvvidconv ! video/x-raw, format=BGRx ! '
+                        f'appsink drop=true max-buffers=3 sync=false'
                     )
                     cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
 
@@ -804,18 +2418,25 @@ class StreamServer:
                     time.sleep(1)
                 raise Exception(f"[ERROR] Could not open stream {rtsp_url} after {max_attempts} attempts.")
 
-            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/")
-            self.start_opencv_overlay_stream("stream", "rtsp://admin:Aragats777@192.168.0.21:3333/stream", "/tmp/active_cross1.png")
-
+            wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:3333/stream")
+            self.start_opencv_overlay_stream(
+                "stream",
+                "rtsp://admin:Aragats777@192.168.0.21:3333/stream",
+                "/tmp/active_cross1.png",
+                pip_source="rtsp://admin:Aragats777@192.168.0.21:1111/")
+            
             wait_for_opencv_ready("rtsp://admin:Aragats777@192.168.0.21:1111/")
-            self.start_opencv_overlay_stream("altstream", "rtsp://admin:Aragats777@192.168.0.21:1111/", "/tmp/active_cross2.png")
-
+            self.start_opencv_overlay_stream(
+                "altstream",
+                "rtsp://admin:Aragats777@192.168.0.21:1111/",
+                "/tmp/active_cross2.png",
+                pip_source="rtsp://admin:Aragats777@192.168.0.21:3333/stream")
+            
             self.context_id = self.server.attach(None)
             self.mainthread = Thread(target=self.mainloop.run)
             self.mainthread.daemon = True
             self.mainthread.start()
             self.running = True
-
 
         finally:
             cam_mutex.release()
@@ -851,11 +2472,6 @@ class StreamServer:
                 self.running = False
             finally:
                 cam_mutex.release()
-    
-    #def updateConfig(self):
-        #TODO: Manipulate the running pipe rather than destroying and recreating it.
-        #self.stop()
-        #self.launch()
 
     def b(self):
         print("Br")
@@ -875,6 +2491,3 @@ if __name__ == '__main__':
     #if (i == 0):
     streamServer.launch()
     streamServer.start()
-
-
-    
